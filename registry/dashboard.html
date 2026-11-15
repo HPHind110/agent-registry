@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">
+<title>Agent Registry · Quản lý danh bạ</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color:#203632;background:#f4f6f3;font-size:15px;line-height:1.5}*{box-sizing:border-box}body{margin:0}button,input,select,textarea{font:inherit}a{color:#17684e}header{background:#153e35;color:white;padding:20px max(24px,calc((100vw - 1240px)/2));display:flex;justify-content:space-between;align-items:center;gap:20px}header b{font-size:20px}nav{display:flex;gap:22px}nav a{color:#dcf0e4;font-size:14px;text-decoration:none}main{max-width:1240px;margin:auto;padding:36px 24px}h1{font-size:36px;letter-spacing:-1.1px;line-height:1.2;margin:10px 0}h2{font-size:21px;margin:0 0 10px}h3{font-size:17px;margin:0 0 7px}p{margin:8px 0;color:#596d62}.eyebrow{font-size:11px;letter-spacing:2px;font-weight:750;color:#5d7668}.row{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}.intro{margin-bottom:28px}.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+button{border:1px solid transparent;border-radius:8px;background:#17684e;color:white;padding:10px 16px;cursor:pointer;font-weight:600;font-size:14px}button:hover{background:#10533d}button.secondary{background:white;border-color:#c7d4ca;color:#294e3c}button.secondary:hover{background:#f1f6f1}button.danger{background:#fff3f1;border-color:#e4c2bb;color:#a33426}button:disabled{opacity:.5;cursor:not-allowed}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}.stat,.panel{background:white;border:1px solid #dce5dc;border-radius:14px;padding:22px}.stat strong{display:block;font-size:23px;margin:7px 0}.stat span,.muted{color:#65796b;font-size:13px}.layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:24px}.filters{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;padding:20px 0}.field{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:650}.field small{font-weight:400;color:#64776b;font-size:12px}input,select,textarea{width:100%;border:1px solid #bdcdbf;border-radius:7px;padding:10px;color:#203632;background:white;min-width:0}textarea{resize:vertical;min-height:80px}input:read-only{background:#f1f4f0}input[type=checkbox]{width:auto}label.check{display:flex;align-items:flex-start;gap:8px;font-size:14px}
+.agent{border-top:1px solid #e3e9e1;padding:20px 0;overflow-wrap:anywhere}.agent:last-child{padding-bottom:0}.badge{font-size:11px;border-radius:20px;padding:5px 10px;background:#e4f3e8;color:#15643c;font-weight:750;white-space:nowrap}.expired{background:#fff1d9;color:#85521a}.chip{display:inline-block;padding:4px 8px;background:#edf2ed;border-radius:5px;margin:3px 4px 3px 0;font-size:12px}.endpoint{font-family:monospace;font-size:12px;overflow-wrap:anywhere;background:#f5f7f3;padding:10px;border-radius:6px;margin:10px 0}.empty{padding:36px 18px;text-align:center;background:#f6f8f4;border-radius:8px}.empty p{max-width:440px;margin:10px auto}.step{padding:17px 0;border-bottom:1px solid #e5ebe2}.step:last-child{border:0}.number{font-size:11px;font-weight:800;letter-spacing:1px;color:#17694f}.step p{font-size:13px}.help{margin-top:24px}.help-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:18px}.help-grid p{font-size:14px}footer{padding-top:24px;font-size:12px;color:#65796b}
+.notice{padding:12px 14px;border-radius:8px;margin:12px 0;background:#edf5ee;color:#245e3e;font-size:14px;white-space:pre-line}.notice.error{background:#fff0ed;color:#9b3024}.notice.info{background:#f3f6ef;color:#506347}[hidden]{display:none!important}dialog{border:1px solid #d6e1d6;border-radius:16px;padding:24px;width:min(680px,calc(100% - 28px));max-height:90vh;overflow:auto;color:#203632;box-shadow:0 24px 80px #102f3626}dialog::backdrop{background:#0b292b80;backdrop-filter:blur(3px)}.dialog-head{margin-bottom:18px}.dialog-head h2{margin:0}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.full{grid-column:1/-1}.dialog-footer{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;border-top:1px solid #e0e7dd;margin-top:22px;padding-top:18px}.credential{font-family:monospace}.subsection{margin-top:20px;padding-top:18px;border-top:1px solid #e0e7dd}.metadata{display:grid;grid-template-columns:145px 1fr;gap:8px;font-size:13px;margin:16px 0}.metadata dt{color:#66796c}.metadata dd{margin:0;overflow-wrap:anywhere}.json{white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f7f3;padding:12px;border-radius:8px;font-size:12px}summary{cursor:pointer;font-weight:600;color:#17684e}details{margin-top:16px}:focus-visible{outline:3px solid #d2a34b;outline-offset:3px}
+@media(max-width:1000px){.layout{grid-template-columns:1fr}.filters{grid-template-columns:1fr 1fr}.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}.step{border:0}}@media(max-width:600px){header{padding:18px}nav{gap:12px}main{padding:24px 16px}h1{font-size:29px}.stats,.help-grid,.steps{grid-template-columns:1fr}.stats{gap:10px}.stat{padding:15px 18px}.stat strong{font-size:20px}.filters,.form-grid{grid-template-columns:1fr}.full{grid-column:auto}.panel{padding:18px}.metadata{grid-template-columns:1fr}.metadata dd{margin-bottom:6px}dialog{padding:20px}.dialog-footer button{flex:1}}
+</style>
+</head>
+<body>
+<header><b>◈ Agent Registry</b><nav aria-label="Điều hướng"><a href="#guide">Hướng dẫn</a><a href="/docs">API nâng cao ↗</a></nav></header>
+<main>
+<section class="intro row"><div><div class="eyebrow">DIRECTORY / DISCOVERY / LIFECYCLE</div><h1>Mọi Agent. Một danh bạ.</h1><p>Đăng ký dịch vụ, khám phá năng lực và quản lý vòng đời Agent.</p></div><button id="new-agent">＋ Đăng ký Agent</button></section>
+<section class="stats" aria-label="Tình trạng Registry">
+<div class="stat"><span>Registry & cơ sở dữ liệu</span><strong id="health">Đang kiểm tra…</strong><span id="health-note">Đọc trạng thái từ server</span></div>
+<div class="stat"><span>Kết quả tìm kiếm</span><strong id="count">—</strong><span>Số Agent khớp bộ lọc hiện tại</span></div>
+<div class="stat"><span>TTL / Chu kỳ heartbeat</span><strong id="timing">—</strong><span>Lease và chu kỳ gửi tín hiệu sống</span></div>
+</section>
+<div id="page-message" class="notice" role="status" hidden></div>
+<div class="layout"><section class="panel">
+<div class="row"><h2>Danh bạ Agent</h2><button class="secondary" id="refresh">Làm mới</button></div><p>Tìm theo khả năng hoặc lĩnh vực. Chọn một Agent để xem chi tiết và quản lý.</p>
+<form id="filters" class="filters">
+<label class="field">Capability<input id="filter-capability" maxlength="100" placeholder="Tên khả năng cần tìm"></label>
+<label class="field">Domain<input id="filter-domain" maxlength="100" placeholder="Lĩnh vực chuyên môn"></label>
+<label class="field">Trạng thái<select id="filter-active"><option value="true">Chỉ ONLINE</option><option value="false" selected>Tất cả trạng thái</option></select></label><button type="submit">Tìm kiếm</button>
+</form>
+<div id="list-error" class="notice error" role="alert" hidden></div><div id="agents" aria-live="polite"><p>Đang tải danh bạ…</p></div><p id="updated" class="muted"></p>
+</section><aside class="panel" id="guide"><h2>Bắt đầu từ đây</h2><div class="steps">
+<div class="step"><div class="number">01 / ĐĂNG KÝ</div><h3>Khai báo Agent Card</h3><p>Bấm <b>Đăng ký Agent</b>, nhập ID, tên, domain, capabilities và endpoint của dịch vụ. Lưu credential được cấp một lần.</p></div>
+<div class="step"><div class="number">02 / DUY TRÌ</div><h3>Giữ lease còn hiệu lực</h3><p>Agent cần tự gửi heartbeat định kỳ. Trang này không gửi heartbeat. Cấp credential cho chương trình Agent để nó tự duy trì lease. Đăng ký card không khởi động dịch vụ.</p></div>
+<div class="step"><div class="number">03 / QUẢN LÝ</div><h3>Chọn Agent để thao tác</h3><p>Nhập credential của đúng Agent để sửa thông tin, gia hạn hoặc hủy đăng ký. Nếu đã UNREACHABLE, dùng <b>Đăng ký lại</b>.</p></div>
+</div></aside></div>
+<section class="panel help"><h2>Hiểu các thông tin trong danh bạ</h2><div class="help-grid">
+<div><h3>ID · Domain · Capability</h3><p><b>ID</b> là định danh ổn định. <b>Domain</b> là lĩnh vực. <b>Capability</b> là khả năng cụ thể; nhiều Agent có thể cùng cung cấp một khả năng.</p></div>
+<div><h3>Endpoint · Lease</h3><p><b>Endpoint</b> là URL mà client sẽ gọi. <b>ONLINE</b> nghĩa là heartbeat còn mới và lease còn hạn; SUSPECT là heartbeat trễ, UNREACHABLE là lease hết hạn, không đảm bảo endpoint đang truy cập được. Registry không gọi thử endpoint.</p></div>
+<div><h3>Credential · Quyền sở hữu</h3><p>Credential là khóa riêng cho từng Agent, chỉ được cấp khi tạo mới. Không chia sẻ hoặc đưa vào URL. Giao diện không lưu khóa vào bộ nhớ trình duyệt lâu dài.</p></div>
+</div><details><summary>Cần thao tác API trực tiếp?</summary><p>Mở <a href="/docs">API nâng cao</a> → chọn API → Try it out → nhập thông tin → Execute. <a href="/v1/health">Health</a> kiểm tra Registry; <a href="/v1/agents">Agents</a> trả danh bạ dạng JSON.</p></details></section>
+<footer>Danh sách tự cập nhật mỗi 5 giây; refresh không gia hạn lease. Đóng trang không unregister Agent và không dừng dịch vụ.</footer>
+</main>
+
+<dialog id="editor" aria-labelledby="editor-title">
+<div class="dialog-head"><h2 id="editor-title">Đăng ký Agent mới</h2><p id="editor-intro"></p></div>
+<form id="card-form"><div class="form-grid">
+<label class="field">Agent ID<input id="card-agent_id" required maxlength="128" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{0,127}" placeholder="Định danh duy nhất"><small>Chữ Latin, số, dấu chấm, gạch dưới hoặc gạch ngang. Không đổi sau khi tạo.</small></label>
+<label class="field">Tên Agent<input id="card-name" required maxlength="200" placeholder="Tên dễ nhận biết"></label>
+<label class="field">Domain<input id="card-domain" required maxlength="100" placeholder="Lĩnh vực chuyên môn"><small>Tên Latin, sẽ được chuẩn hóa thành chữ thường.</small></label>
+<label class="field">Phiên bản<input id="card-version" required maxlength="64" value="1.0"></label>
+<label class="field full">Capabilities<textarea id="card-capabilities" required placeholder="Mỗi khả năng một dòng, hoặc ngăn cách bằng dấu phẩy"></textarea><small>Tối đa 100 khả năng. Khoảng trắng và dấu gạch ngang được đổi thành dấu gạch dưới.</small></label>
+<label class="field full">Endpoint<input id="card-endpoint" type="url" required maxlength="2048" placeholder="https://your-service.example/api"><small>URL HTTP(S) đầy đủ mà client có thể gọi; không chứa username, password hoặc fragment.</small></label>
+<label class="field full">Mô tả<textarea id="card-description" maxlength="1000" placeholder="Agent cung cấp dịch vụ gì?"></textarea></label>
+<label id="editor-auth" class="field full" hidden>Credential của Agent<input id="editor-token" type="password" autocomplete="off" spellcheck="false"><small>Chỉ nhập khóa, không thêm chữ Bearer. Không lưu sau khi đóng biểu mẫu.</small></label>
+</div><div id="editor-message" class="notice error" role="alert" hidden></div>
+<div class="dialog-footer"><button type="button" class="secondary" id="editor-cancel">Hủy</button><button id="editor-submit" type="submit">Đăng ký Agent</button></div></form>
+</dialog>
+
+<dialog id="secret" aria-labelledby="secret-title">
+<h2 id="secret-title">Agent đã được đăng ký</h2><p id="secret-agent"></p>
+<div class="notice info">Lưu credential ngay. Server chỉ cấp khóa này một lần và không có chức năng lấy lại. Khóa sẽ bị xóa khỏi trang khi bạn đóng thông báo.</div>
+<label class="field">Credential mới<input id="new-token" class="credential" type="password" readonly autocomplete="off" spellcheck="false"></label>
+<div class="actions" style="margin-top:12px"><button class="secondary" id="reveal-token">Hiện khóa</button><button id="copy-token">Sao chép credential</button></div><p id="copy-message" class="muted" role="status"></p>
+<div class="subsection"><label class="check"><input type="checkbox" id="saved-token">Tôi đã lưu credential ở nơi riêng và hiểu rằng không thể lấy lại.</label></div>
+<div class="dialog-footer"><button id="secret-done" disabled>Đã lưu, tiếp tục</button></div>
+</dialog>
+
+<dialog id="manager" aria-labelledby="manager-title">
+<div class="row dialog-head"><div><h2 id="manager-title">Chi tiết Agent</h2><span id="manager-id" class="muted"></span></div><button class="secondary" id="manager-close">Đóng</button></div>
+<div id="agent-detail"></div><div id="manage-actions" class="subsection">
+<label class="field">Credential của Agent<input id="manage-token" type="password" autocomplete="off" spellcheck="false" placeholder="Nhập khóa để thực hiện thao tác"><small>Khóa chỉ dùng cho Agent đang mở và được xóa khi đóng cửa sổ. Xem thông tin không cần khóa.</small></label>
+<p class="muted">Sửa card không gia hạn lease. Heartbeat do chương trình Agent gửi. Agent UNREACHABLE cần đăng ký lại.</p>
+<div class="actions"><button id="edit-agent">Sửa card</button><button class="secondary" id="reregister-agent">Đăng ký lại</button><button class="danger" id="delete-agent">Hủy đăng ký</button></div>
+<section id="delete-confirmation" class="notice error" hidden><b>Hủy đăng ký Agent này?</b><p>Card và quyền sở hữu sẽ bị xóa khỏi Registry. Dịch vụ không bị tắt; ID này có thể được người khác đăng ký lại.</p>
+<label class="field">Nhập lại Agent ID để xác nhận<input id="delete-id" autocomplete="off"></label>
+<div class="actions" style="margin-top:10px"><button class="danger" id="confirm-delete">Xác nhận hủy đăng ký</button><button class="secondary" id="cancel-delete">Giữ lại</button></div></section>
+</div><div id="manage-message" class="notice" role="status" hidden></div>
+</dialog>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const cardFields = ['agent_id','name','domain','version','capabilities','endpoint','description'];
+let selected = null, editorMode = 'create', editorBusy = false, managerBusy = false, refreshGeneration = 0, managerGeneration = 0;
+// Untrusted Agent Card strings are rendered only as text, never HTML.
+function element(tag, text = '', className = '') {
+  const el = document.createElement(tag); el.textContent = text; el.className = className; return el;
+}
+function message(id, text = '', error = false) {
+  const el = $(id); el.textContent = text; el.className = 'notice' + (error ? ' error' : ''); el.hidden = !text;
+}
+function errorText(status, body) {
+  const known = {401:'Credential thiếu hoặc không đúng. Nếu ID đã tồn tại, hãy mở Agent đó và chọn Đăng ký lại với khóa cũ.',404:'Agent không còn tồn tại. Hãy làm mới danh bạ.',409:'Lease đã hết hạn. Hãy chọn Đăng ký lại bằng credential của Agent.',503:'Registry hoặc cơ sở dữ liệu tạm không sẵn sàng. Thử lại sau.'};
+  if (status === 422 && Array.isArray(body?.detail)) return 'Dữ liệu chưa hợp lệ:\n' + body.detail.map(e => (e.loc || []).filter(x => x !== 'body').join('.') + ': ' + e.msg).join('\n');
+  return known[status] || ('HTTP ' + status + ': ' + (typeof body?.detail === 'string' ? body.detail : 'Không thực hiện được yêu cầu.'));
+}
+async function api(path, {method = 'GET', body, token} = {}) {
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const headers = {};
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (token) headers.Authorization = 'Bearer ' + token;
+    const response = await fetch(path, {method, headers, body:body === undefined ? undefined : JSON.stringify(body), cache:'no-store', signal:controller.signal});
+    const data = response.status === 204 ? null : await response.json();
+    if (!response.ok) throw new Error(errorText(response.status, data));
+    return data;
+  } catch (error) {
+    if (error.name === 'AbortError' || error instanceof TypeError) throw new Error(method === 'GET' ? 'Không kết nối được Registry. Kiểm tra server rồi thử lại.' : 'Mất kết nối hoặc hết thời gian chờ. Thao tác có thể đã được lưu; kiểm tra Agent trước khi gửi lại. Nếu tạo mới mà mất credential, trang không thể lấy lại khóa.');
+    throw error;
+  } finally { clearTimeout(timer); }
+}
+function timestamp(value) { return new Date(value).toLocaleString('vi-VN'); }
+function badge(status) { return element('span',status,'badge' + (status !== 'ONLINE' ? ' expired' : '')); }
+function renderList(agents) {
+  $('agents').replaceChildren(); $('count').textContent = agents.length + ' Agent';
+  if (!agents.length) {
+    const empty = element('div','','empty');
+    empty.append(element('h3','Chưa có Agent phù hợp'),element('p','Đăng ký dịch vụ của bạn hoặc thay đổi bộ lọc. Chọn “Tất cả trạng thái” để tìm cả Agent đã hết hạn.'));
+    const add = element('button','Đăng ký Agent mới'); add.onclick = () => openEditor('create');
+    empty.append(add); $('agents').append(empty); return;
+  }
+  for (const agent of agents) {
+    const card = element('article','','agent'), head = element('div','','row'), caps = element('div'), bottom = element('div','','row');
+    head.append(element('h3',agent.name),badge(agent.status));
+    agent.capabilities.forEach(c => caps.append(element('span',c,'chip')));
+    const manage = element('button','Chi tiết & quản lý','secondary'); manage.setAttribute('aria-label','Quản lý ' + agent.agent_id); manage.onclick = () => openManager(agent.agent_id);
+    bottom.append(element('span','Lease hết hạn: ' + timestamp(agent.lease_expires_at),'muted'),manage);
+    card.append(head,element('div',agent.agent_id + ' · ' + agent.domain + ' · v' + agent.version,'muted'),element('p',agent.description),caps,element('div',agent.endpoint,'endpoint'),bottom);
+    $('agents').append(card);
+  }
+}
+async function refresh() {
+  const generation = ++refreshGeneration; $('refresh').disabled = true;
+  const params = new URLSearchParams({active_only:$('filter-active').value});
+  for (const key of ['capability','domain']) { const value = $('filter-' + key).value.trim(); if (value) params.set(key,value); }
+  await Promise.all([
+    api('/v1/health').then(h => {
+      if (generation !== refreshGeneration) return;
+      $('health').textContent = 'Đang hoạt động'; $('health-note').textContent = 'Cơ sở dữ liệu phản hồi bình thường'; $('timing').textContent = h.ttl_seconds + 's / ' + h.heartbeat_interval_seconds + 's';
+    }).catch(() => { if (generation !== refreshGeneration) return; $('health').textContent = 'Không kết nối được'; $('health-note').textContent = 'Kiểm tra server Registry'; $('timing').textContent = '—'; }),
+    api('/v1/agents?' + params).then(agents => {
+      if (generation !== refreshGeneration) return; renderList(agents); message('list-error'); $('updated').textContent = 'Cập nhật: ' + new Date().toLocaleTimeString('vi-VN');
+    }).catch(error => { if (generation !== refreshGeneration) return; message('list-error',error.message,true); $('agents').replaceChildren(); $('count').textContent = '—'; $('updated').textContent = 'Không tải được danh bạ.'; })
+  ]);
+  if (generation === refreshGeneration) $('refresh').disabled = false;
+}
+function openEditor(mode, agent = null, token = '') {
+  editorMode = mode; $('card-form').reset(); message('editor-message');
+  for (const key of cardFields) $('card-' + key).value = agent ? (key === 'capabilities' ? agent[key].join('\n') : agent[key]) : (key === 'version' ? '1.0' : '');
+  $('card-agent_id').readOnly = mode !== 'create'; $('editor-auth').hidden = mode === 'create'; $('editor-token').required = mode !== 'create'; $('editor-token').value = token;
+  $('editor-title').textContent = {create:'Đăng ký Agent mới',edit:'Sửa Agent Card',reregister:'Đăng ký lại Agent'}[mode];
+  $('editor-submit').textContent = mode === 'edit' ? 'Lưu thay đổi' : mode === 'create' ? 'Đăng ký Agent' : 'Đăng ký lại & gia hạn';
+  $('editor-intro').textContent = mode === 'edit' ? 'Cập nhật card không gia hạn lease. ID được giữ nguyên.' : mode === 'reregister' ? 'Gửi card đầy đủ để cập nhật thông tin và tạo lease mới. Credential cũ vẫn giữ nguyên.' : 'Khai báo dịch vụ bất kỳ. Đăng ký card không khởi động hay kiểm tra endpoint.';
+  $('editor').showModal();
+}
+function readCard() {
+  const card = Object.fromEntries(cardFields.map(key => [key,$('card-' + key).value.trim()]));
+  card.capabilities = card.capabilities.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
+  if (!card.capabilities.length || card.capabilities.length > 100) throw Error('Nhập từ 1 đến 100 capabilities, mỗi khả năng một dòng hoặc ngăn cách bằng dấu phẩy.');
+  return card;
+}
+$('card-form').addEventListener('submit',async event => {
+  event.preventDefault(); if (editorBusy) return; message('editor-message');
+  try {
+    const card = readCard(), token = $('editor-token').value.trim();
+    if (editorMode !== 'create' && !token) throw Error('Nhập credential của Agent để tiếp tục.');
+    editorBusy = true; $('editor-submit').disabled = true; $('editor-cancel').disabled = true;
+    let result;
+    if (editorMode === 'edit') { const {agent_id,...patch} = card; result = await api('/v1/agents/' + encodeURIComponent(agent_id),{method:'PATCH',body:patch,token}); }
+    else result = await api('/v1/agents',{method:'POST',body:card,token:editorMode === 'create' ? undefined : token});
+    $('editor').close();
+    if (result.credential) {
+      $('secret-agent').textContent = 'Agent ID: ' + result.agent_id; $('new-token').value = result.credential; $('new-token').type = 'password';
+      $('reveal-token').textContent = 'Hiện khóa'; $('saved-token').checked = false; $('secret-done').disabled = true; $('copy-message').textContent = ''; $('secret').showModal();
+    } else message('page-message',editorMode === 'edit' ? 'Đã cập nhật Agent Card. Lease không thay đổi.' : 'Đã đăng ký lại Agent và gia hạn lease.');
+    refresh();
+  } catch (error) { message('editor-message',error.message,true); }
+  finally { editorBusy = false; $('editor-submit').disabled = false; $('editor-cancel').disabled = false; }
+});
+$('editor-cancel').onclick = () => $('editor').close();
+$('editor').addEventListener('cancel',event => { if (editorBusy) event.preventDefault(); });
+$('editor').addEventListener('close',() => { $('editor-token').value = ''; });
+$('secret').addEventListener('cancel',event => event.preventDefault());
+$('secret').addEventListener('close',() => { $('new-token').value = ''; });
+$('saved-token').onchange = () => { $('secret-done').disabled = !$('saved-token').checked; };
+$('secret-done').onclick = () => { if ($('saved-token').checked) $('secret').close(); };
+$('reveal-token').onclick = () => { const show = $('new-token').type === 'password'; $('new-token').type = show ? 'text' : 'password'; $('reveal-token').textContent = show ? 'Ẩn khóa' : 'Hiện khóa'; };
+$('copy-token').onclick = async () => {
+  try { await navigator.clipboard.writeText($('new-token').value); $('copy-message').textContent = 'Đã sao chép. Hãy lưu khóa ở nơi riêng trước khi tiếp tục.'; }
+  catch { $('new-token').type = 'text'; $('reveal-token').textContent = 'Ẩn khóa'; $('new-token').focus(); $('new-token').select(); $('copy-message').textContent = 'Trình duyệt không cho sao chép tự động. Nhấn Ctrl+C để sao chép khóa đã chọn.'; }
+};
+function renderDetails() {
+  const agent = selected; $('manager-title').textContent = agent.name; $('manager-id').textContent = agent.agent_id;
+  $('agent-detail').replaceChildren(badge(agent.status),element('p',agent.description),element('div',agent.endpoint,'endpoint'));
+  const caps = element('div'); agent.capabilities.forEach(c => caps.append(element('span',c,'chip'))); $('agent-detail').append(caps);
+  const metadata = element('dl','','metadata');
+  for (const [label,value] of [['Domain',agent.domain],['Phiên bản',agent.version],['Đăng ký lúc',timestamp(agent.registered_at)],['Cập nhật lúc',timestamp(agent.updated_at)],['Heartbeat cuối',timestamp(agent.last_heartbeat)],['Lease hết hạn',timestamp(agent.lease_expires_at)]]) metadata.append(element('dt',label),element('dd',value));
+  const raw = element('details'); raw.append(element('summary','Xem Agent Card JSON'),element('pre',JSON.stringify(agent,null,2),'json')); $('agent-detail').append(metadata,raw);
+}
+async function openManager(id) {
+  const generation = ++managerGeneration;
+  selected = null; $('manage-token').value = ''; $('delete-id').value = ''; $('delete-confirmation').hidden = true; message('manage-message'); $('manage-actions').hidden = true;
+  $('manager-title').textContent = 'Chi tiết Agent'; $('manager-id').textContent = id; $('agent-detail').replaceChildren(element('p','Đang tải thông tin mới nhất…')); $('manager').showModal();
+  try { const agent = await api('/v1/agents/' + encodeURIComponent(id)); if (!$('manager').open || generation !== managerGeneration) return; selected = agent; renderDetails(); $('manage-actions').hidden = false; }
+  catch (error) { if (generation !== managerGeneration) return; $('agent-detail').replaceChildren(); message('manage-message',error.message,true); }
+}
+function ownerToken() {
+  const token = $('manage-token').value.trim();
+  if (!token) { message('manage-message','Nhập credential của đúng Agent trước khi thực hiện thao tác.',true); $('manage-token').focus(); }
+  return token;
+}
+function setManagerBusy(value) { managerBusy = value; $('manager').querySelectorAll('button').forEach(button => { button.disabled = value; }); }
+function editSelected(mode) {
+  if (!selected || managerBusy) return; const token = ownerToken(); if (!token) return;
+  const agent = selected; $('manager').close(); openEditor(mode,agent,token);
+}
+$('edit-agent').onclick = () => editSelected('edit');
+$('reregister-agent').onclick = () => editSelected('reregister');
+$('delete-agent').onclick = () => { if (selected && ownerToken()) { $('delete-confirmation').hidden = false; $('delete-id').focus(); } };
+$('cancel-delete').onclick = () => { $('delete-confirmation').hidden = true; $('delete-id').value = ''; };
+$('confirm-delete').onclick = async () => {
+  if (!selected || managerBusy) return; const token = ownerToken(); if (!token) return;
+  if ($('delete-id').value !== selected.agent_id) { message('manage-message','Agent ID xác nhận chưa khớp. Không có dữ liệu nào bị xóa.',true); return; }
+  setManagerBusy(true);
+  try { await api('/v1/agents/' + encodeURIComponent(selected.agent_id),{method:'DELETE',token}); $('manager').close(); message('page-message','Đã hủy đăng ký Agent. Dịch vụ bên ngoài không bị tắt.'); refresh(); }
+  catch (error) { message('manage-message',error.message,true); } finally { setManagerBusy(false); }
+};
+$('manager-close').onclick = () => $('manager').close();
+$('manager').addEventListener('cancel',event => { if (managerBusy) event.preventDefault(); });
+$('manager').addEventListener('close',() => { $('manage-token').value = ''; selected = null; ++managerGeneration; });
+window.addEventListener('beforeunload',event => { if ($('secret').open || editorBusy || managerBusy) { event.preventDefault(); event.returnValue = ''; } });
+$('new-agent').onclick = () => openEditor('create');
+$('filters').onsubmit = event => { event.preventDefault(); refresh(); };
+$('refresh').onclick = refresh;
+setInterval(async () => {
+  if (document.hidden || $('refresh').disabled) return;
+  await refresh();
+  if (selected && $('manager').open && !managerBusy) {
+    const id = selected.agent_id, generation = managerGeneration;
+    try {
+      const latest = await api('/v1/agents/' + encodeURIComponent(id));
+      if (generation === managerGeneration && selected?.agent_id === id && !managerBusy) { selected = latest; renderDetails(); }
+    } catch (error) { if (generation === managerGeneration) message('manage-message',error.message,true); }
+  }
+}, 5000);
+refresh();
+</script>
+</body>
+</html>

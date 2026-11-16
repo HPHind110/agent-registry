@@ -1,24 +1,65 @@
 # Provider Invocation Contract
 
-[README](../README.md) · [Registry API](api_contract.md) · [Agent Integration](agent_integration.md)
+[README](../README.md) · [Agent Integration](agent_integration.md) · [Registry API](api_contract.md)
 
-## 1. Phạm vi và convention
+File này trả lời câu hỏi:
 
-Đây là common invocation convention v1 của demo và SDK helper, **không phải chuẩn universal hoặc yêu cầu của Registry backend**. Provider dùng protocol khác vẫn đăng ký/discovery được, nhưng consumer phải có adapter phù hợp.
+> **Sau khi Client đã tìm thấy một Provider trong Registry, Client phải gọi Provider đó như thế nào?**
 
-Agent Card chỉ công bố capability và một full endpoint. Nó chưa mô tả HTTP method, request/response schema, business authentication hoặc protocol version; `version` hiện là phiên bản service. Các nhóm phải thống nhất convention ngoài Registry.
+Đây là **quy ước dùng trong demo của repository**, không phải protocol bắt buộc của Agent Registry.
 
-Consumer POST vào **đúng endpoint trong card**, không tự nối `/invoke` hoặc `/forecast`. Registry credential không được gửi tới business endpoint. Các demo chưa có business authentication.
+Registry vẫn có thể đăng ký và discovery một Agent dùng protocol khác.
 
-## 2. Request / response envelope
+## 1. Discovery không phải Invocation
+
+Registry chỉ cho Client biết:
+
+```text
+Agent nào?
+Capability gì?
+Endpoint ở đâu?
+```
+
+Ví dụ:
+
+```json
+{
+  "agent_id": "news-agent-01",
+  "capabilities": ["search_news"],
+  "endpoint": "http://127.0.0.1:8002/invoke"
+}
+```
+
+Nhưng chỉ từ thông tin đó, Client chưa tự biết đầy đủ:
+
+- dùng GET hay POST;
+- request body có field gì;
+- response có schema gì;
+- lỗi business được biểu diễn thế nào.
+
+Vì vậy Provider và Consumer cần một **invocation contract** riêng.
+
+## 2. Common convention của demo
+
+Demo hiện tại dùng:
+
+```http
+POST <endpoint lấy từ Registry>
+Content-Type: application/json
+```
 
 Request:
 
 ```json
-{"capability": "search_news", "input": {"keyword": "Hanoi"}}
+{
+  "capability": "search_news",
+  "input": {
+    "keyword": "Hanoi"
+  }
+}
 ```
 
-Response HTTP 200, ví dụ rút gọn:
+Response thành công:
 
 ```json
 {
@@ -26,70 +67,231 @@ Response HTTP 200, ví dụ rút gọn:
   "capability": "search_news",
   "output": {
     "articles": [
-      {"title": "Hanoi travel update", "summary": "Hanoi museums welcome visitors this weekend."}
+      {
+        "title": "Hanoi travel update",
+        "summary": "Hanoi museums welcome visitors this weekend."
+      }
     ]
   }
 }
 ```
 
-Envelope request gồm capability (chuỗi strip, 1–100 ký tự) và input (object); không nhận trường thừa. Output là object; response identity/capability phải trùng provider/request. Capability trong invocation cần đúng tên đã thỏa thuận; không áp dụng normalization của Registry để tự đổi tên request.
+Ba phần quan trọng của response:
 
-Helper `invoke_first` validate envelope, Agent ID, capability và output theo Pydantic model do consumer cung cấp. Helper không tự biết schema của mọi capability.
+- `agent_id`: Provider nào đã xử lý request;
+- `capability`: chức năng vừa được gọi;
+- `output`: kết quả business.
 
-## 3. Demo capabilities
+Client nên kiểm tra cả ba thay vì tin mọi JSON trả về.
 
-| Provider / endpoint mặc định | Capability | Input | Output |
-|---|---|---|---|
-| Weather: POST `http://127.0.0.1:8001/forecast` | weather_forecast | city: chuỗi 1–100, mặc định Hanoi | city, temperature_c, condition, source |
-| News: POST `http://127.0.0.1:8002/invoke` | search_news | keyword: chuỗi 1–100 | articles: array các object title/summary |
-| News: cùng endpoint | summarize_news | text: chuỗi 1–10000 | summary: chuỗi không rỗng |
+## 3. Client gọi đúng endpoint được discovery
 
-POST business input dùng strict validation, strip chuỗi, không nhận field thừa hoặc chuỗi chỉ whitespace. Weather trả nhiệt độ 26, condition partly_cloudy, source demo_static_data. Schema consumer yêu cầu temperature_c là số hữu hạn và các chuỗi output Weather không rỗng.
+Nếu Registry trả:
 
-News tìm substring không phân biệt hoa thường trong title/summary của ba bài mẫu; không có kết quả trả articles rỗng và vẫn thành công. Tóm tắt lấy câu đầu (tách theo dấu chấm/chấm hỏi/chấm than theo sau bởi whitespace), cắt tối đa 240 ký tự. Không gọi nguồn tin trực tiếp hoặc LLM.
-
-## 4. Errors và failover
-
-| Tình huống | Response provider |
-|---|---|
-| Capability không hỗ trợ | 400, detail.code = unsupported_capability |
-| Business input không hợp lệ | 422, detail.code = invalid_input, kèm errors |
-| Envelope sai | 422, detail array của FastAPI |
-| Lỗi HTTP/service khác | Consumer xử lý theo HTTP response thực tế |
-
-`invoke_first` thử provider theo thứ tự danh sách. Lỗi mạng, HTTP, JSON, envelope, identity/capability hoặc business schema khiến helper thử provider tiếp theo; hết provider thì ném InvocationError. Discovery lỗi có DiscoveryError riêng. Timeout do caller thiết lập; Planner dùng 5s/request, không follow redirect, không đọc cấu hình proxy từ môi trường.
-
-Failover không cung cấp exactly-once hoặc idempotency key. Không dùng mặc định này cho operation có side effect nếu chưa thống nhất cách chống thực thi lặp.
-
-## 5. Planner output
-
-Planner discovery `weather_forecast`/domain weather rồi `search_news`/domain news, gọi từng capability trực tiếp. Hai phần được xử lý lỗi độc lập, không phải workflow chạy song song.
-
-Output gồm:
-
-| Field | Ý nghĩa |
-|---|---|
-| city | Thành phố đầu vào |
-| status | complete nếu không có lỗi; partial nếu có bất kỳ lỗi nào, kể cả cả hai phần lỗi |
-| weather | Forecast đã validate hoặc null |
-| news | Danh sách bài tìm được, hoặc [] nếu lỗi/không có kết quả |
-| providers_used | Các object agent_id/capability đã thành công |
-| errors | Theo phần weather/news, có stage discovery hoặc invocation và message |
-
-CLI vẫn in JSON khi partial, exit code 1; complete exit 0. articles rỗng không tự tạo lỗi. Planner không cache binding, không hard-code địa chỉ provider, không phải multi-agent orchestrator.
-
-## 6. Legacy Weather / Travel
-
-Weather giữ `GET /forecast?city=Hanoi` với city mặc định Hanoi, length 1–100. Response GET là forecast trực tiếp, không envelope:
-
-```json
-{"city":"Hanoi","temperature_c":26,"condition":"partly_cloudy","source":"demo_static_data"}
+```text
+http://127.0.0.1:8002/invoke
 ```
 
-Travel discovery domain weather/capability weather_forecast, GET đúng endpoint được trả về, thêm city query. Nó có timeout/failover HTTP/JSON nhưng **chưa validate business schema forecast**. POST Weather là phần bổ sung; không bắt Travel chuyển sang convention mới.
+Client gọi đúng URL đó.
 
-## 7. Provider health
+Không tự nối thêm:
 
-Weather và News có `GET /health`, trả live=true, ready=true và registration state. State SDK có thể starting, registered, reconnecting, operator_required, unregistered; disabled khi lifecycle không chạy.
+```text
+/invoke
+/forecast
+/api
+```
 
-Ready hiện là giá trị cố định trong demo, không phải kiểm tra dependency thật. State registration không đồng nhất với ONLINE của Registry. Registry không gọi endpoint này. Phạm vi test xem [Verification](verification.md).
+vì Agent Card hiện lưu **full endpoint**.
+
+Registry credential cũng không được gửi sang Provider business API. Credential Registry chỉ dùng để quản lý registration.
+
+## 4. Các capability demo hiện có
+
+| Provider | Capability | Input | Output |
+|---|---|---|---|
+| Weather | `weather_forecast` | `city` | city, temperature_c, condition, source |
+| News | `search_news` | `keyword` | danh sách article |
+| News | `summarize_news` | `text` | summary |
+
+### Weather
+
+Request:
+
+```json
+{
+  "capability": "weather_forecast",
+  "input": {
+    "city": "Hanoi"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "agent_id": "weather-local",
+  "capability": "weather_forecast",
+  "output": {
+    "city": "Hanoi",
+    "temperature_c": 26,
+    "condition": "partly_cloudy",
+    "source": "demo_static_data"
+  }
+}
+```
+
+### News search
+
+Request:
+
+```json
+{
+  "capability": "search_news",
+  "input": {
+    "keyword": "Hanoi"
+  }
+}
+```
+
+Không tìm thấy bài phù hợp vẫn là request thành công:
+
+```json
+{
+  "articles": []
+}
+```
+
+### News summary
+
+Request:
+
+```json
+{
+  "capability": "summarize_news",
+  "input": {
+    "text": "First sentence. Second sentence."
+  }
+}
+```
+
+Demo hiện chỉ lấy câu đầu để tạo summary. Nó không gọi LLM hoặc nguồn tin ngoài.
+
+## 5. Errors
+
+| Tình huống | Behavior |
+|---|---|
+| Capability không hỗ trợ | HTTP `400` |
+| Business input sai | HTTP `422` |
+| Provider lỗi | HTTP `5xx` hoặc lỗi kết nối |
+| Response sai JSON/schema | Consumer coi invocation thất bại |
+
+Discovery failure và invocation failure là hai loại lỗi khác nhau:
+
+```text
+Không tìm thấy Provider
+→ discovery failure
+
+Tìm thấy Provider nhưng gọi thất bại
+→ invocation failure
+```
+
+## 6. Nhiều Provider và failover
+
+Một capability có thể có nhiều Provider:
+
+```text
+weather-a
+weather-b
+weather-c
+```
+
+Helper `invoke_first` thử lần lượt:
+
+```text
+Provider A
+   ↓ fail
+Provider B
+   ↓ success
+return result
+```
+
+Các lỗi như network, HTTP, JSON hoặc response schema không hợp lệ có thể khiến helper chuyển sang Provider tiếp theo.
+
+Điều này phù hợp với các operation đọc trong demo.
+
+Với operation có side effect như thanh toán hoặc ghi dữ liệu, không nên tự động retry/failover nếu chưa thiết kế idempotency.
+
+## 7. Planner Client dùng contract này thế nào?
+
+Planner cần hai capability:
+
+```text
+weather_forecast
+search_news
+```
+
+Flow:
+
+```text
+Planner
+  ↓ discover weather_forecast
+Weather endpoint
+  ↓ invoke
+Weather result
+
+Planner
+  ↓ discover search_news
+News endpoint
+  ↓ invoke
+News result
+
+Planner
+  ↓
+combine
+```
+
+Nếu một bên lỗi, Planner vẫn giữ kết quả phần còn lại và trả `status: partial`.
+
+Planner là consumer demo, không phải multi-agent orchestrator.
+
+## 8. Legacy Weather / Travel
+
+Weather vẫn giữ API cũ:
+
+```http
+GET /forecast?city=Hanoi
+```
+
+để `Travel Client` cũ tiếp tục hoạt động.
+
+Weather đồng thời hỗ trợ POST theo common invocation convention để Planner sử dụng.
+
+Điều này minh họa backward compatibility:
+
+```text
+Travel Client
+→ GET Weather
+
+Planner Client
+→ POST Weather
+```
+
+Cả hai đều discovery endpoint qua Registry.
+
+## 9. Giới hạn của convention hiện tại
+
+Agent Card hiện chưa mô tả:
+
+- HTTP method;
+- input schema;
+- output schema;
+- business authentication;
+- protocol version riêng.
+
+Vì vậy capability name như `search_news` chỉ giúp **tìm Provider**, chưa đủ để một Client hoàn toàn xa lạ tự suy ra cách gọi Provider.
+
+Trong project hiện tại, Provider và Consumer thống nhất contract ngoài Registry.
+
+Nếu sau này cần interoperability mạnh hơn, có thể mở rộng Agent Card bằng protocol metadata hoặc schema reference.

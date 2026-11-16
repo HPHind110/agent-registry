@@ -1,78 +1,245 @@
 # Verification
 
-[README / chạy demo](../README.md) · [Architecture](architecture.md) · [Agent Integration](agent_integration.md)
+[README](../README.md) · [Architecture](architecture.md) · [Agent Integration](agent_integration.md)
 
-Tài liệu này ghi phạm vi test và kết quả thực thi, không thay thế hướng dẫn sử dụng hoặc chứng nhận triển khai production.
+File này mô tả **hệ thống đang được kiểm tra ở những mức nào** và cách chạy các bài test.
 
-## 1. Test Strategy
+Nó không phải hướng dẫn sử dụng Registry. Nếu chỉ muốn chạy project, xem [README](../README.md).
 
-| Lớp kiểm tra | Source | Cách thực hiện |
-|---|---|---|
-| API, persistence, validation | tests/test_registry.py | FastAPI TestClient, SQLite tạm, clock điều khiển được |
-| Lifecycle / failure detection | tests/test_lifecycle.py | Clock giả cho boundary; httpx MockTransport cho retry/recovery |
-| Provider contract / consumer integration | tests/test_generic.py | News/Weather API, discovery, validate output và failover |
-| Dashboard controller | tests/dashboard.test.cjs | Node test runner với DOM/fetch giả |
-| Legacy process smoke | scripts/smoke_test.py | Registry + Weather + Travel qua process riêng và HTTP loopback |
-| Multi-provider process smoke | scripts/generic_smoke_test.py | Registry + Weather + News + Planner qua process riêng |
+## 1. Có những loại test nào?
 
-Fake clock tránh chờ TTL thực trong API tests. Smoke dùng TTL ngắn, port/DB/credential tạm; không sử dụng database và credential demo của người dùng. Runner test-only điều khiển process qua file riêng: crash dùng os._exit bỏ qua cleanup, graceful dùng Uvicorn shutdown; không thêm public route điều khiển server.
+Project hiện có bốn mức kiểm tra chính.
 
-## 2. Commands
+### API tests
 
-Sau khi cài dependencies theo README, từ root repository:
+Kiểm tra Registry REST API:
 
-```powershell
-.\.venv\Scripts\python -m pytest -q
-node --test tests/dashboard.test.cjs
-.\.venv\Scripts\python scripts/smoke_test.py
-.\.venv\Scripts\python -m scripts.generic_smoke_test
+- register;
+- discovery;
+- lookup;
+- credential;
+- heartbeat;
+- lease;
+- update;
+- unregister;
+- persistence;
+- validation.
+
+Source chính:
+
+```text
+tests/test_registry.py
 ```
 
-Node chỉ cần cho dashboard tests. Generic smoke phải chạy dạng module như trên để import helpers từ scripts. Server log được in khi smoke thất bại; cleanup kiểm tra kết thúc process và xóa DB tạm.
+### Lifecycle tests
 
-## 3. Current Verification Results
+Kiểm tra các tình huống theo thời gian và lỗi mạng:
 
-Thực thi ngày **16/11/2026**, Windows, Python **3.13.15**, Node.js **v24.20.0**, virtualenv hiện có.
+- heartbeat qua nhiều lease;
+- `ONLINE → SUSPECT → UNREACHABLE`;
+- recovery;
+- re-registration;
+- Registry tạm unavailable;
+- graceful shutdown.
 
-| Lệnh | Kết quả thực tế |
+Source:
+
+```text
+tests/test_lifecycle.py
+```
+
+### Generic integration tests
+
+Kiểm tra Registry không phụ thuộc Weather:
+
+- nhiều domain/capability;
+- News Agent;
+- Weather backward compatibility;
+- Planner;
+- multiple providers;
+- failover;
+- response validation.
+
+Source:
+
+```text
+tests/test_generic.py
+```
+
+### Process smoke tests
+
+Các script này khởi động những process thật và giao tiếp qua HTTP loopback.
+
+```text
+scripts/smoke_test.py
+scripts/generic_smoke_test.py
+```
+
+Chúng gần với demo end-to-end hơn unit test.
+
+## 2. Chạy test
+
+Sau khi cài dependencies:
+
+```powershell
+python -m pytest -q
+```
+
+Dashboard controller tests cần Node.js:
+
+```powershell
+node --test tests/dashboard.test.cjs
+```
+
+Legacy Weather/Travel smoke:
+
+```powershell
+python scripts/smoke_test.py
+```
+
+Generic Registry/Weather/News/Planner smoke:
+
+```powershell
+python -m scripts.generic_smoke_test
+```
+
+Node.js không cần để chạy Registry; chỉ cần cho dashboard test.
+
+## 3. Những scenario chính được kiểm tra
+
+| Scenario | Được kiểm tra ở |
 |---|---|
-| pytest -q | 67 passed, 1 warning, 4.06s; exit 0 |
-| node --test tests/dashboard.test.cjs | 6 passed, 0 failed; exit 0 |
-| python scripts/smoke_test.py | 6 nhóm PASS, gồm shutdown và temporary database cleanup; exit 0 |
-| python -m scripts.generic_smoke_test | 5 nhóm PASS, gồm cleanup; exit 0 |
+| Register và lookup Agent | API tests |
+| Duplicate ID và ownership | API tests |
+| Discovery theo domain/capability | API + generic tests |
+| Nhiều Provider cùng capability | API + generic tests |
+| Heartbeat renew lease | API + lifecycle tests |
+| SUSPECT / UNREACHABLE | lifecycle tests |
+| Re-register sau khi lease hết | lifecycle tests |
+| Endpoint thay đổi | lifecycle + smoke |
+| Registry restart giữ dữ liệu | API + smoke |
+| Registry tạm unavailable | lifecycle + smoke |
+| Weather business API vẫn chạy khi Registry lỗi | lifecycle + smoke |
+| Graceful unregister | lifecycle + smoke |
+| Weather GET cũ vẫn dùng được | generic + legacy smoke |
+| News search/summarize | generic tests |
+| Planner complete/partial | generic + generic smoke |
+| Provider failover | generic tests |
+| Browser không heartbeat thay Agent | dashboard tests |
+| Weather + News chạy như process riêng | generic smoke |
 
-Warning pytest là StarletteDeprecationWarning về TestClient dùng httpx. Không thay dependency/code để xử lý warning trong task tài liệu này.
+## 4. Generic smoke test đang chứng minh điều gì?
 
-“Nhóm PASS” là các checkpoint do smoke script in ra, không phải số test case pytest. Kết quả trên chỉ mô tả môi trường/lần chạy này; không suy ra mọi tình huống mạng đều đã được xử lý.
+Flow chính:
 
-## 4. Scenarios Covered
+```text
+Start Registry
+   ↓
+Start Weather + News
+   ↓
+hai Provider tự register + heartbeat
+   ↓
+Planner discovery và gọi cả hai
+```
 
-| Scenario | Bằng chứng trong suite |
-|---|---|
-| Registration, lookup, normalization, response schemas | test_registry |
-| Ownership, duplicate/concurrent ID, unauthorized mutation | test_registry |
-| Heartbeat renew, nhiều chu kỳ lease, ngưỡng SUSPECT/UNREACHABLE | test_registry + test_lifecycle |
-| Exclude non-ONLINE khỏi discovery, nhiều provider/filter | test_registry + test_generic |
-| Re-registration, endpoint update, persistence qua restart | API tests + cả hai smoke |
-| Unregister giữ ownership, DELETE xóa record | test_lifecycle / test_registry |
-| Retry Registry unavailable, business API tiếp tục | test_lifecycle + cả hai smoke |
-| Weather GET/POST compatibility | test_generic + legacy smoke |
-| News search/summarize và input lỗi | test_generic |
-| Planner complete/partial, direct invocation | test_generic + generic smoke |
-| Failover network/HTTP/JSON/schema/identity/capability | test_generic với MockTransport |
-| Browser không heartbeat, polling chỉ GET | dashboard controller tests |
-| Heartbeat hoạt động không cần browser | cả hai process smoke |
-| Import SDK cũ còn hoạt động | test_generic |
+Sau đó script tiếp tục kiểm tra:
 
-Smoke legacy quan sát crash → SUSPECT → UNREACHABLE, Registry restart không hồi sinh lease cũ, recovery cùng identity ở endpoint mới và graceful unregister. Generic smoke thêm Weather crash trong khi News còn dùng được, Planner partial, cả hai provider reconnect sau Registry outage.
+```text
+Weather crash
+   ↓
+Weather bị loại khỏi discovery
+   ↓
+News vẫn dùng được
+   ↓
+Planner trả partial
+```
 
-## 5. Not Verified
+và:
 
-- LAN nhiều máy, provider của nhóm ngoài, mạng Internet production.
-- Browser E2E hoặc layout/accessibility trên browser thật; DOM giả không thay thế kiểm thử này.
-- Python 3.11/3.12 hoặc hệ điều hành khác trong lần chạy hiện tại.
-- Benchmark tải, số lượng Agent lớn, mọi kiểu packet loss/network partition hoặc clock jump.
-- Build/cài wheel SDK độc lập trong lần kiểm chứng này.
-- Active probe, instance fencing, credential rotation: chưa được triển khai, không có test chứng minh các feature này.
+```text
+Weather restart ở endpoint mới
+   ↓
+re-register
+   ↓
+Planner discovery binding mới
+```
 
-Các ví dụ code trong tài liệu cần được phân biệt với các module demo đang có. Kết quả kiểm tra cú pháp/link tài liệu được ghi trong báo cáo refactor, không tính vào số test của ứng dụng.
+Ngoài ra còn kiểm tra Registry outage và graceful shutdown.
+
+## 5. Tại sao unit test dùng fake clock / MockTransport?
+
+Một số hành vi phụ thuộc thời gian.
+
+Nếu test thật sự phải chờ TTL 30 giây cho từng case thì test sẽ rất chậm.
+
+Vì vậy lifecycle tests dùng clock điều khiển được để mô phỏng:
+
+```text
+now
+↓
+advance 20s
+↓
+SUSPECT
+↓
+advance tiếp
+↓
+UNREACHABLE
+```
+
+`httpx.MockTransport` được dùng để giả lập:
+
+- mất kết nối;
+- HTTP 503;
+- JSON sai;
+- schema sai;
+- Provider đầu tiên fail.
+
+Smoke test vẫn dùng process và HTTP thật để bổ sung cho các test giả lập này.
+
+## 6. Những gì chưa được kiểm chứng đầy đủ
+
+Hiện test chủ yếu chạy trong local/loopback.
+
+Chưa coi là đã kiểm chứng đầy đủ:
+
+- nhiều laptop trên LAN thực tế;
+- Agent của nhóm khác;
+- firewall/network policy thực tế;
+- Internet production;
+- browser E2E đầy đủ;
+- benchmark số lượng Agent lớn;
+- Registry replication/consensus;
+- instance fencing;
+- credential rotation/recovery.
+
+Nói cách khác:
+
+> Local tests chứng minh implementation hiện tại hoạt động trong phạm vi đã mô phỏng và smoke test, không chứng minh mọi tình huống mạng phân tán ngoài thực tế.
+
+## 7. Khi nào nên chạy bộ test nào?
+
+Khi sửa Registry backend:
+
+```powershell
+python -m pytest -q
+```
+
+Khi sửa Dashboard:
+
+```powershell
+node --test tests/dashboard.test.cjs
+```
+
+Trước khi demo Weather/Travel:
+
+```powershell
+python scripts/smoke_test.py
+```
+
+Trước khi demo generic integration:
+
+```powershell
+python -m scripts.generic_smoke_test
+```
+
+Trước khi tích hợp liên nhóm, nên chạy toàn bộ bốn nhóm test trên rồi mới chuyển sang kiểm thử LAN/cross-team.

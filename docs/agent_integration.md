@@ -1,18 +1,18 @@
 # Agent Integration
 
-[README / ch?y demo](../README.md) � [Registry API](api_contract.md) � [Invocation Contract](invocation_contract.md)
+[README / chạy demo](../README.md) · [Registry API](api_contract.md) · [Invocation Contract](invocation_contract.md)
 
-Provider Agent cung c?p nghi?p v? v� duy tr? registration. Client / Consumer ch? t?m v� g?i provider; kh�ng c?n ��ng k? n?u kh�ng cung c?p d?ch v?. Nh�m v?n h�nh Registry cung c?p Registry URL; nh�m t�ch h?p kh�ng c?n s?a source Registry.
+Provider Agent cung cấp nghiệp vụ và duy trì registration. Client / Consumer chỉ tìm và gọi provider; không cần đăng ký nếu không cung cấp dịch vụ. Nhóm vận hành Registry cung cấp Registry URL; nhóm tích hợp không cần sửa source Registry.
 
-## 1. Provider integration � chu?n b?
+## 1. Provider integration — chuẩn bị
 
-C?n m?t HTTP service, Agent ID ?n �?nh, Agent Card, Registry URL truy c?p ��?c, n�i l�u credential b?n v?ng v� contract nghi?p v? �? th?a thu?n v?i consumer. C� th? d�ng b?t k? ng�n ng? h? tr? HTTP/JSON.
+Cần một HTTP service, Agent ID ổn định, Agent Card, Registry URL truy cập được, nơi lưu credential bền vững và contract nghiệp vụ đã thỏa thuận với consumer. Có thể dùng bất kỳ ngôn ngữ hỗ trợ HTTP/JSON.
 
-Endpoint l� URL operation �?y �?, kh�ng ph?i ch? base URL. M?t ID/credential ch? d�ng cho m?t process �ang ch?y; ch�a c� instance fencing. Xem gi?i h?n field/normalization trong [API Contract](api_contract.md).
+Endpoint là URL operation đầy đủ, không phải chỉ base URL. Một ID/credential chỉ dùng cho một process đang chạy; chưa có instance fencing. Xem giới hạn field/normalization trong [API Contract](api_contract.md).
 
-### ��ng k? b?ng REST
+### Đăng ký bằng REST
 
-V� d? PowerShell t?o card cho m?t service do nh�m t? tri?n khai; l?nh n�y **kh�ng t?o/ch?y service**. Ch? d�ng l?n �?u v?i ID m?i v� file credential ch�a t?n t?i:
+Ví dụ PowerShell tạo card cho một service do nhóm tự triển khai; lệnh này **không tạo/chạy service**. Chỉ dùng lần đầu với ID mới và file credential chưa tồn tại:
 
 ```powershell
 $registry = 'http://127.0.0.1:8000'
@@ -27,9 +27,9 @@ $registration = Invoke-RestMethod "$registry/v1/agents" -Method Post -ContentTyp
 [IO.File]::WriteAllText($keyPath, $registration.credential, [Text.UTF8Encoding]::new($false))
 ```
 
-Kh�ng in response ch?a credential ra log. 201 tr? credential m?t l?n; authenticated re-registration tr? 200 v� kh�ng c?p l?i kh�a.
+Không in response chứa credential ra log. 201 trả credential một lần; authenticated re-registration trả 200 và không cấp lại khóa.
 
-V?i record �? c�, �?c kh�a v� g?i l?i card �?y �?:
+Với record đã có, đọc khóa và gửi lại card đầy đủ:
 
 ```powershell
 $token = [IO.File]::ReadAllText($keyPath).Trim()
@@ -37,20 +37,20 @@ $headers = @{ Authorization = "Bearer $token" }
 Invoke-RestMethod "$registry/v1/agents" -Method Post -Headers $headers -ContentType 'application/json' -Body ($card | ConvertTo-Json)
 ```
 
-Provider t? tri?n khai REST ph?i g?i POST `/v1/agents/{agent_id}/heartbeat` ? background theo interval tr? v?; kh�ng y�u c?u operator g?i th? c�ng m?i lease. X? l? 409 b?ng re-registration, l?i t?m th?i b?ng retry, v� unregister khi shutdown. SDK b�n d�?i cung c?p v?ng n�y.
+Provider tự triển khai REST phải gửi POST `/v1/agents/{agent_id}/heartbeat` ở background theo interval trả về; không yêu cầu operator gửi thủ công mỗi lease. Xử lý 409 bằng re-registration, lỗi tạm thời bằng retry, và unregister khi shutdown. SDK bên dưới cung cấp vòng này.
 
-## 2. Minimal Provider Example � Python SDK
+## 2. Minimal Provider Example — Python SDK
 
-SDK y�u c?u Python 3.11+, ch? ph? thu?c httpx/Pydantic. T? m�i tr�?ng Python c?a project b�n ngo�i:
+SDK yêu cầu Python 3.11+, chỉ phụ thuộc httpx/Pydantic. Từ môi trường Python của project bên ngoài:
 
 ```powershell
 python -m pip install C:\agent-registry
 python -m pip install fastapi uvicorn
 ```
 
-L?nh th? hai ph?c v? v� d? FastAPI, kh�ng ph?i dependency b?t bu?c c?a SDK. Package ch? c�i `agent_registry_client`, kh�ng c�i Registry ho?c demo. C� th? d�ng editable install khi ph�t tri?n.
+Lệnh thứ hai phục vụ ví dụ FastAPI, không phải dependency bắt buộc của SDK. Package chỉ cài `agent_registry_client`, không cài Registry hoặc demo. Có thể dùng editable install khi phát triển.
 
-L�u v� d? sau th�nh `provider.py` trong project c?a nh�m:
+Lưu ví dụ sau thành `provider.py` trong project của nhóm:
 
 ```python
 import os
@@ -105,56 +105,56 @@ async def invoke(request: Invocation):
     }
 ```
 
-Ch?y trong c�ng th� m?c ch?a file credential n?u �? ��ng k? REST tr�?c:
+Chạy trong cùng thư mục chứa file credential nếu đã đăng ký REST trước:
 
 ```powershell
 $env:REGISTRY_URL = 'http://127.0.0.1:8000'
 python -m uvicorn provider:app --port 8010
 ```
 
-N?u ch�a c� registration/file, SDK t? t?o registration v� l�u credential. N?u �? ��ng k? qua REST/web, ph?i d�ng ��ng ID/file. V� d? minh h?a m?t capability m?i, kh�ng ph?i module c� s?n trong repo; contract Echo do v� d? t? �?nh ngh?a.
+Nếu chưa có registration/file, SDK tự tạo registration và lưu credential. Nếu đã đăng ký qua REST/web, phải dùng đúng ID/file. Ví dụ minh họa một capability mới, không phải module có sẵn trong repo; contract Echo do ví dụ tự định nghĩa.
 
-## 3. Credential v� ��ng k? tr�n web
+## 3. Credential và đăng ký trên web
 
-SDK �?c file UTF-8 l�c startup; khi t?o m?i, ghi credential b?ng exclusive create, kh�ng overwrite file c?. D�ng ��?ng d?n b?n v?ng/absolute n?u working directory c� th? �?i. Kh�ng commit secret; h?n ch? quy?n �?c file, ki?m tra ACL th� m?c tr�n Windows. Registry ch? gi? hash, kh�ng c� API l?y l?i kh�a.
+SDK đọc file UTF-8 lúc startup; khi tạo mới, ghi credential bằng exclusive create, không overwrite file cũ. Dùng đường dẫn bền vững/absolute nếu working directory có thể đổi. Không commit secret; hạn chế quyền đọc file, kiểm tra ACL thư mục trên Windows. Registry chỉ giữ hash, không có API lấy lại khóa.
 
 Flow web:
 
-1. M? dashboard, ch?n **��ng k? Agent**, �i?n card ��ng v?i c?u h?nh service.
-2. L�u credential ��?c hi?n th? m?t l?n v�o file UTF-8 kh�ng BOM, ch? ch?a kh�a.
-3. C?p ��ng file v� Agent ID cho ch��ng tr?nh provider.
-4. Start provider; SDK re-register r?i t? heartbeat.
-5. ��ng browser v?n kh�ng ?nh h�?ng lifecycle.
+1. Mở dashboard, chọn **Đăng ký Agent**, điền card đúng với cấu hình service.
+2. Lưu credential được hiển thị một lần vào file UTF-8 không BOM, chỉ chứa khóa.
+3. Cấp đúng file và Agent ID cho chương trình provider.
+4. Start provider; SDK re-register rồi tự heartbeat.
+5. Đóng browser vẫn không ảnh hưởng lifecycle.
 
-Refresh trang kh�ng renew lease. N�t **��ng k? l?i** l� mutation ch? �?ng t?o lease m?i, kh�ng ph?i heartbeat t? �?ng. N�t **H?y ��ng k?** hi?n g?i DELETE v� x�a ownership; kh�ng t��ng ���ng soft unregister.
+Refresh trang không renew lease. Nút **Đăng ký lại** là mutation chủ động tạo lease mới, không phải heartbeat tự động. Nút **Hủy đăng ký** hiện gọi DELETE và xóa ownership; không tương đương soft unregister.
 
-M?t file kh�a ho?c m?t response c?p kh�a l?n �?u ch�a c� recovery API. Kh�ng th? suy ra secret t? hash. C?n operator x? l? ho?c d�ng ID m?i; kh�ng reset to�n b? DB �? ch?a ri�ng m?t registration.
+Mất file khóa hoặc mất response cấp khóa lần đầu chưa có recovery API. Không thể suy ra secret từ hash. Cần operator xử lý hoặc dùng ID mới; không reset toàn bộ DB để chữa riêng một registration.
 
-## 4. Automatic heartbeat, recovery v� shutdown
+## 4. Automatic heartbeat, recovery và shutdown
 
-`registered_agent` b?t �?u task n?n; business API kh�ng ph?i �?i Registry ��ng k? xong. SDK register l�c startup, l?y heartbeat interval t? response v� g?i heartbeat �?nh k?. Th�nh c�ng renew lease; Agent c� th? ch?y qua nhi?u chu k? TTL.
+`registered_agent` bắt đầu task nền; business API không phải đợi Registry đăng ký xong. SDK register lúc startup, lấy heartbeat interval từ response và gửi heartbeat định kỳ. Thành công renew lease; Agent có thể chạy qua nhiều chu kỳ TTL.
 
-| T?nh hu?ng | SDK hi?n x? l? |
+| Tình huống | SDK hiện xử lý |
 |---|---|
-| Heartbeat c?n lease | Renew; SUSPECT c� th? tr? l?i ONLINE |
-| Heartbeat tr? 409 | G?i l?i card c�ng credential �? re-register |
-| L?i m?ng, 408/429/5xx | Retry exponential backoff c� jitter, ti?p t?c ph?c v? business API |
-| 401/403/404/422 v� 4xx kh�ng retry kh�c | D?ng lifecycle v?i operator_required, kh�ng t? chi?m ID |
-| File credential kh�ng �?c/l�u ��?c | operator_required |
-| Tho�t context / Ctrl+C | H?y task, c? g?ng POST unregister trong t?i �a 4s |
+| Heartbeat còn lease | Renew; SUSPECT có thể trở lại ONLINE |
+| Heartbeat trả 409 | Gửi lại card cùng credential để re-register |
+| Lỗi mạng, 408/429/5xx | Retry exponential backoff có jitter, tiếp tục phục vụ business API |
+| 401/403/404/422 và 4xx không retry khác | Dừng lifecycle với operator_required, không tự chiếm ID |
+| File credential không đọc/lưu được | operator_required |
+| Thoát context / Ctrl+C | Hủy task, cố gắng POST unregister trong tối đa 4s |
 
-Retry timing kh�ng thay TTL c?a Registry. Kh�ng d�ng `--lifespan off`; kh�ng ch?y nhi?u worker d�ng chung ID. Registry restart v?i DB c? gi? ownership/timestamp. N?u DB b? x�a, token c? kh�ng t? ��?c ch?p nh?n cho ID m?i.
+Retry timing không thay TTL của Registry. Không dùng `--lifespan off`; không chạy nhiều worker dùng chung ID. Registry restart với DB cũ giữ ownership/timestamp. Nếu DB bị xóa, token cũ không tự được chấp nhận cho ID mới.
 
-## 5. C?u h?nh c�c ch��ng tr?nh c� s?n
+## 5. Cấu hình các chương trình có sẵn
 
-C�c ch��ng tr?nh �?c bi?n m�i tr�?ng process; `.env.example` kh�ng t? ��?c n?p. Trong PowerShell d�ng `$env:TEN_BIEN = 'gia_tri'`.
+Các chương trình đọc biến môi trường process; `.env.example` không tự được nạp. Trong PowerShell dùng `$env:TEN_BIEN = 'gia_tri'`.
 
-| Bi?n | Ch��ng tr?nh | M?c �?nh |
+| Biến | Chương trình | Mặc định |
 |---|---|---|
 | REGISTRY_DATABASE_URL | Registry | sqlite:///./registry.db |
 | REGISTRY_HEARTBEAT_SECONDS | Registry | 10 |
 | REGISTRY_TTL_SECONDS | Registry | 30 |
-| REGISTRY_SUSPECT_SECONDS | Registry | (heartbeat + TTL) / 2 n?u kh�ng �?t |
+| REGISTRY_SUSPECT_SECONDS | Registry | (heartbeat + TTL) / 2 nếu không đặt |
 | REGISTRY_URL | Providers, Travel, Planner | http://127.0.0.1:8000 |
 | WEATHER_AGENT_ID | Weather | weather-local |
 | WEATHER_ENDPOINT | Weather | http://127.0.0.1:8001/forecast |
@@ -164,11 +164,11 @@ C�c ch��ng tr?nh �?c bi?n m�i tr�?ng process; `.env.example` kh�ng
 | NEWS_CREDENTIAL_FILE | News | news.credential |
 | AGENT_RETRY_MAX_SECONDS | Weather, News | 10 |
 
-Registry y�u c?u `0 < heartbeat < suspect < TTL`; heartbeat/TTL l� s? nguy�n gi�y. Retry max l� s? d��ng, gi?i h?n kho?ng backoff ch? kh�ng gi?i h?n s? l?n th?. C�c bi?n demo kh�ng t? ��?c SDK �?c; ch��ng tr?nh truy?n gi� tr? v�o `registered_agent`.
+Registry yêu cầu `0 < heartbeat < suspect < TTL`; heartbeat/TTL là số nguyên giây. Retry max là số dương, giới hạn khoảng backoff chứ không giới hạn số lần thử. Các biến demo không tự được SDK đọc; chương trình truyền giá trị vào `registered_agent`.
 
-## 6. Consumer integration � discovery r?i invocation
+## 6. Consumer integration — discovery rồi invocation
 
-Lookup theo ID tr? c? record kh�ng ONLINE; normal discovery ch? tr? ONLINE, k?t h?p domain/capability b?ng AND. K?t qu? r?ng l� h?p l?:
+Lookup theo ID trả cả record không ONLINE; normal discovery chỉ trả ONLINE, kết hợp domain/capability bằng AND. Kết quả rỗng là hợp lệ:
 
 ```powershell
 Invoke-RestMethod 'http://127.0.0.1:8000/v1/agents?domain=text&capability=echo_text'
@@ -176,11 +176,11 @@ Invoke-RestMethod 'http://127.0.0.1:8000/v1/agents/echo-team-a'
 Invoke-RestMethod 'http://127.0.0.1:8000/v1/agents?active_only=false'
 ```
 
-L?nh cu?i ph?c v? quan s�t, kh�ng d�ng �? m?c �?nh ch?n provider. Consumer g?i endpoint tr?c ti?p; Registry kh�ng proxy. N?u provider kh�ng d�ng common convention, thay ph?n invocation b?ng adapter �? th?ng nh?t.
+Lệnh cuối phục vụ quan sát, không dùng để mặc định chọn provider. Consumer gọi endpoint trực tiếp; Registry không proxy. Nếu provider không dùng common convention, thay phần invocation bằng adapter đã thống nhất.
 
 ### Minimal Consumer Example
 
-L�u `consumer.py` b�n c?nh v� d? provider. Schema output do consumer khai b�o theo contract, kh�ng import source Registry:
+Lưu `consumer.py` bên cạnh ví dụ provider. Schema output do consumer khai báo theo contract, không import source Registry:
 
 ```python
 import os
@@ -207,36 +207,35 @@ except (DiscoveryError, InvocationError) as exc:
     raise SystemExit(str(exc))
 ```
 
-Ch?y `python consumer.py` khi provider �? ��ng k?. Consumer ch? bi?t Registry URL v� capability contract, kh�ng hard-code �?a ch? provider. Kh�ng g?n Bearer credential Registry v�o HTTP client d�ng g?i business endpoint.
+Chạy `python consumer.py` khi provider đã đăng ký. Consumer chỉ biết Registry URL và capability contract, không hard-code địa chỉ provider. Không gắn Bearer credential Registry vào HTTP client dùng gọi business endpoint.
 
-## 7. Endpoint change v� LAN
+## 7. Endpoint change và LAN
 
-D?ng provider c?, gi? Agent ID/credential, s?a endpoint qu?ng b� v� host/port server r?i restart. Re-registration c?p nh?t binding. V?i Weather, �?i c? WEATHER_ENDPOINT v� Uvicorn `--port`; v?i News t��ng t?. PATCH c?ng s?a binding nh�ng kh�ng renew lease; s?a tr�n web c� th? b? c?u h?nh service ghi �� ? l?n re-registration sau.
+Dừng provider cũ, giữ Agent ID/credential, sửa endpoint quảng bá và host/port server rồi restart. Re-registration cập nhật binding. Với Weather, đổi cả WEATHER_ENDPOINT và Uvicorn `--port`; với News tương tự. PATCH cũng sửa binding nhưng không renew lease; sửa trên web có thể bị cấu hình service ghi đè ở lần re-registration sau.
 
-Tr�n nhi?u m�y, `127.0.0.1` l� ch�nh m�y �ang g?i. V� d? Registry ? m�y A, provider ? B, consumer ? C:
+Trên nhiều máy, `127.0.0.1` là chính máy đang gọi. Ví dụ Registry ở máy A, provider ở B, consumer ở C:
 
-- Registry/provider bind `--host 0.0.0.0` n?u c?n nh?n k?t n?i LAN.
-- REGISTRY_URL d�ng IP/DNS c?a A; endpoint qu?ng b� d�ng IP/DNS c?a B, **kh�ng d�ng 0.0.0.0**.
-- M? ��ng port theo ch�nh s�ch firewall; ki?m tra t? C b?ng `Test-NetConnection <IP-provider> -Port <port>`.
-- Provider v� consumer ph?i c�ng th?ng nh?t contract; ONLINE kh�ng b?o �?m route m?ng t? C t?i B.
+- Registry/provider bind `--host 0.0.0.0` nếu cần nhận kết nối LAN.
+- REGISTRY_URL dùng IP/DNS của A; endpoint quảng bá dùng IP/DNS của B, **không dùng 0.0.0.0**.
+- Mở đúng port theo chính sách firewall; kiểm tra từ C bằng `Test-NetConnection <IP-provider> -Port <port>`.
+- Provider và consumer phải cùng thống nhất contract; ONLINE không bảo đảm route mạng từ C tới B.
 
-��y l� h�?ng d?n c?u h?nh, ch�a ph?i k?t qu? ki?m th? cross-machine. HTTP demo d�nh cho m?ng tin c?y; tri?n khai Internet c?n HTTPS v� ki?m so�t truy c?p ph� h?p.
+Đây là hướng dẫn cấu hình, chưa phải kết quả kiểm thử cross-machine. HTTP demo dành cho mạng tin cậy; triển khai Internet cần HTTPS và kiểm soát truy cập phù hợp.
 
 ## 8. Troubleshooting
 
-| Tri?u ch?ng | Ki?m tra / x? l? |
+| Triệu chứng | Kiểm tra / xử lý |
 |---|---|
-| 401 | ID v� credential c� kh?p? File c� BOM, kh�a c? sau reset DB? Kh�ng x�a kh�a �? th? chi?m l?i ID |
-| 404 khi heartbeat | Record sai ID ho?c b? DELETE; lifecycle d?ng, c?n operator |
-| 409 | Lease h?t/unregistered; authenticated re-registration, SDK t? x? l? |
-| 422 | Ki?m tra card/query theo API contract; business input theo invocation contract |
-| 503 / reconnecting | Registry/DB/network t?m l?i; xem log v� ch? retry |
-| Discovery [] | Filter sai ho?c kh�ng c� ONLINE provider; xem active_only=false |
-| Provider ch?y nh�ng kh�ng ��?c t?m th?y | Ki?m tra /health.registration, Registry URL v� file credential |
-| Endpoint v?n c? | Ki?m tra c?u h?nh provider, kh�ng ch? card tr�n web; m?t process/ID |
-| L?i ghi file kh�a | Th� m?c t?n t?i, c� quy?n ghi, file m?i ch�a c�; xem operator_required |
-| Planner partial | Xem errors v� stage discovery/invocation; ph?n c?n l?i c� th? v?n th�nh c�ng |
-| /forecast ho?t �?ng nh�ng lease h?t | Business API v� lifecycle �?c l?p; ki?m tra task ��ng k?, kh�ng heartbeat t? browser |
+| 401 | ID và credential có khớp? File có BOM, khóa cũ sau reset DB? Không xóa khóa để thử chiếm lại ID |
+| 404 khi heartbeat | Record sai ID hoặc bị DELETE; lifecycle dừng, cần operator |
+| 409 | Lease hết/unregistered; authenticated re-registration, SDK tự xử lý |
+| 422 | Kiểm tra card/query theo API contract; business input theo invocation contract |
+| 503 / reconnecting | Registry/DB/network tạm lỗi; xem log và chờ retry |
+| Discovery [] | Filter sai hoặc không có ONLINE provider; xem active_only=false |
+| Provider chạy nhưng không được tìm thấy | Kiểm tra /health.registration, Registry URL và file credential |
+| Endpoint vẫn cũ | Kiểm tra cấu hình provider, không chỉ card trên web; một process/ID |
+| Lỗi ghi file khóa | Thư mục tồn tại, có quyền ghi, file mới chưa có; xem operator_required |
+| Planner partial | Xem errors và stage discovery/invocation; phần còn lại có thể vẫn thành công |
+| /forecast hoạt động nhưng lease hết | Business API và lifecycle độc lập; kiểm tra task đăng ký, không heartbeat từ browser |
 
-Gi?i h?n thi?t k? xem [Architecture](architecture.md); ph?m vi ki?m ch?ng xem [Verification](verification.md).
-
+Giới hạn thiết kế xem [Architecture](architecture.md); phạm vi kiểm chứng xem [Verification](verification.md).

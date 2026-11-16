@@ -1,84 +1,129 @@
-# Agent Integration
+# Tích hợp Agent với Registry
 
-[README / chạy demo](../README.md) · [Registry API](api_contract.md) · [Invocation Contract](invocation_contract.md)
+[README](../README.md) · [Registry API](api_contract.md) · [Invocation Contract](invocation_contract.md)
 
-Provider Agent cung cấp nghiệp vụ và duy trì registration. Client / Consumer chỉ tìm và gọi provider; không cần đăng ký nếu không cung cấp dịch vụ. Nhóm vận hành Registry cung cấp Registry URL; nhóm tích hợp không cần sửa source Registry.
+Mục tiêu của file này là trả lời một câu hỏi:
 
-## 1. Provider integration — chuẩn bị
+> **Nếu nhóm khác đã có một Agent, họ cần làm gì để Agent đó xuất hiện và được tìm thấy trong Registry?**
 
-Cần một HTTP service, Agent ID ổn định, Agent Card, Registry URL truy cập được, nơi lưu credential bền vững và contract nghiệp vụ đã thỏa thuận với consumer. Có thể dùng bất kỳ ngôn ngữ hỗ trợ HTTP/JSON.
+Không cần sửa source code Registry.
 
-Endpoint là URL operation đầy đủ, không phải chỉ base URL. Một ID/credential chỉ dùng cho một process đang chạy; chưa có instance fencing. Xem giới hạn field/normalization trong [API Contract](api_contract.md).
+## 1. Trước hết: Agent của bạn là Provider hay Consumer?
 
-### Đăng ký bằng REST
+### Provider Agent
 
-Ví dụ PowerShell tạo card cho một service do nhóm tự triển khai; lệnh này **không tạo/chạy service**. Chỉ dùng lần đầu với ID mới và file credential chưa tồn tại:
+Provider là Agent **cung cấp một chức năng cho Agent khác**.
 
-```powershell
-$registry = 'http://127.0.0.1:8000'
-$keyPath = Join-Path $PWD 'echo-team-a.credential'
-if (Test-Path -LiteralPath $keyPath) { throw 'Credential file already exists; use re-registration.' }
-$card = @{
-  agent_id='echo-team-a'; name='Echo Agent'; domain='text'
-  description='Echo text'; capabilities=@('echo_text')
-  endpoint='http://127.0.0.1:8010/invoke'; version='1.0'
+Ví dụ:
+
+```text
+Weather Agent
+capability = weather_forecast
+```
+
+Provider cần:
+
+1. có business API riêng;
+2. có Agent Card;
+3. register với Registry;
+4. tự gửi heartbeat;
+5. giữ credential để update/re-register/unregister.
+
+### Consumer / Client
+
+Consumer là chương trình **đi tìm và sử dụng Provider Agent**.
+
+Consumer:
+
+1. hỏi Registry theo capability/domain;
+2. nhận Agent Card + endpoint;
+3. gọi trực tiếp Provider Agent.
+
+Consumer không bắt buộc phải đăng ký nếu bản thân nó không cung cấp dịch vụ cho Agent khác.
+
+## 2. Agent Card cần chuẩn bị
+
+Ví dụ một Text Agent:
+
+```json
+{
+  "agent_id": "text-team-a",
+  "name": "Text Agent",
+  "domain": "text",
+  "description": "Simple text processing provider",
+  "capabilities": ["echo_text"],
+  "endpoint": "http://192.168.1.20:8010/invoke",
+  "version": "1.0"
 }
-$registration = Invoke-RestMethod "$registry/v1/agents" -Method Post -ContentType 'application/json' -Body ($card | ConvertTo-Json)
-[IO.File]::WriteAllText($keyPath, $registration.credential, [Text.UTF8Encoding]::new($false))
 ```
 
-Không in response chứa credential ra log. 201 trả credential một lần; authenticated re-registration trả 200 và không cấp lại khóa.
+Ý nghĩa:
 
-Với record đã có, đọc khóa và gửi lại card đầy đủ:
+- `agent_id`: identity ổn định của Agent;
+- `domain`: lĩnh vực;
+- `capabilities`: Agent làm được gì;
+- `endpoint`: Client phải gọi ở đâu.
+
+Nếu Agent restart ở địa chỉ khác, giữ nguyên `agent_id` và cập nhật `endpoint`.
+
+## 3. Cách dễ nhất để thử: Web Dashboard
+
+Để kiểm tra nhanh một Agent Card:
+
+1. chạy Registry;
+2. mở Web Dashboard;
+3. bấm **Đăng ký Agent**;
+4. nhập Agent Card;
+5. lưu credential được cấp;
+6. dùng bộ lọc Domain/Capability để kiểm tra Agent đã xuất hiện.
+
+Quan trọng:
+
+> Đăng ký trên Web chỉ tạo registration trong Registry. Nó **không khởi động Agent** và Web **không heartbeat thay Agent**.
+
+Nếu không có Agent process thật gửi heartbeat, registration sẽ dần chuyển khỏi `ONLINE`.
+
+## 4. Provider bằng Python SDK
+
+Với Python, cách khuyến nghị là dùng package `agent_registry_client`.
+
+### Cài SDK
+
+Cài trực tiếp từ repository:
 
 ```powershell
-$token = [IO.File]::ReadAllText($keyPath).Trim()
-$headers = @{ Authorization = "Bearer $token" }
-Invoke-RestMethod "$registry/v1/agents" -Method Post -Headers $headers -ContentType 'application/json' -Body ($card | ConvertTo-Json)
+python -m pip install "git+https://github.com/HPHind110/agent-registry.git"
 ```
 
-Provider tự triển khai REST phải gửi POST `/v1/agents/{agent_id}/heartbeat` ở background theo interval trả về; không yêu cầu operator gửi thủ công mỗi lease. Xử lý 409 bằng re-registration, lỗi tạm thời bằng retry, và unregister khi shutdown. SDK bên dưới cung cấp vòng này.
-
-## 2. Minimal Provider Example — Python SDK
-
-SDK yêu cầu Python 3.11+, chỉ phụ thuộc httpx/Pydantic. Từ môi trường Python của project bên ngoài:
+Nếu đang phát triển ngay trong repository đã clone:
 
 ```powershell
-python -m pip install C:\agent-registry
-python -m pip install fastapi uvicorn
+python -m pip install -e .
 ```
 
-Lệnh thứ hai phục vụ ví dụ FastAPI, không phải dependency bắt buộc của SDK. Package chỉ cài `agent_registry_client`, không cài Registry hoặc demo. Có thể dùng editable install khi phát triển.
+SDK chỉ hỗ trợ tích hợp Registry; Agent của nhóm vẫn tự chọn framework business API của mình.
 
-Lưu ví dụ sau thành `provider.py` trong project của nhóm:
+### Lifecycle tối thiểu
+
+Ví dụ Provider dùng FastAPI:
 
 ```python
 import os
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import FastAPI
 from agent_registry_client import registered_agent
 
 CARD = {
-    "agent_id": "echo-team-a",
-    "name": "Echo Agent",
+    "agent_id": "text-team-a",
+    "name": "Text Agent",
     "domain": "text",
-    "description": "Echo text",
+    "description": "Simple text processing provider",
     "capabilities": ["echo_text"],
     "endpoint": "http://127.0.0.1:8010/invoke",
     "version": "1.0",
 }
-
-class EchoInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    text: str = Field(min_length=1)
-
-class Invocation(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    capability: str
-    input: EchoInput
 
 @asynccontextmanager
 async def lifespan(app):
@@ -86,156 +131,240 @@ async def lifespan(app):
         async with registered_agent(
             CARD,
             os.getenv("REGISTRY_URL", "http://127.0.0.1:8000"),
-            "echo-team-a.credential",
+            "text-team-a.credential",
             http,
-        ) as lifecycle:
-            app.state.lifecycle = lifecycle
+        ):
             yield
 
 app = FastAPI(lifespan=lifespan)
 
 @app.post("/invoke")
-async def invoke(request: Invocation):
-    if request.capability != "echo_text":
-        raise HTTPException(400, detail={"code": "unsupported_capability"})
+async def invoke(body: dict):
     return {
         "agent_id": CARD["agent_id"],
         "capability": "echo_text",
-        "output": {"text": request.input.text},
+        "output": body.get("input", {}),
     }
 ```
 
-Chạy trong cùng thư mục chứa file credential nếu đã đăng ký REST trước:
+Khi process start, SDK tự:
 
-```powershell
-$env:REGISTRY_URL = 'http://127.0.0.1:8000'
-python -m uvicorn provider:app --port 8010
+```text
+register
+   ↓
+heartbeat định kỳ
+   ↓
+renew lease
+   ↓
+retry khi Registry tạm lỗi
+   ↓
+re-register nếu lease đã hết
 ```
 
-Nếu chưa có registration/file, SDK tự tạo registration và lưu credential. Nếu đã đăng ký qua REST/web, phải dùng đúng ID/file. Ví dụ minh họa một capability mới, không phải module có sẵn trong repo; contract Echo do ví dụ tự định nghĩa.
+Khi shutdown bình thường, SDK cố gắng unregister.
 
-## 3. Credential và đăng ký trên web
+## 5. Credential
 
-SDK đọc file UTF-8 lúc startup; khi tạo mới, ghi credential bằng exclusive create, không overwrite file cũ. Dùng đường dẫn bền vững/absolute nếu working directory có thể đổi. Không commit secret; hạn chế quyền đọc file, kiểm tra ACL thư mục trên Windows. Registry chỉ giữ hash, không có API lấy lại khóa.
+Khi Agent ID được tạo lần đầu, Registry trả một credential.
 
-Flow web:
+Credential dùng để chứng minh:
 
-1. Mở dashboard, chọn **Đăng ký Agent**, điền card đúng với cấu hình service.
-2. Lưu credential được hiển thị một lần vào file UTF-8 không BOM, chỉ chứa khóa.
-3. Cấp đúng file và Agent ID cho chương trình provider.
-4. Start provider; SDK re-register rồi tự heartbeat.
-5. Đóng browser vẫn không ảnh hưởng lifecycle.
+> “Tôi là owner của Agent ID này.”
 
-Refresh trang không renew lease. Nút **Đăng ký lại** là mutation chủ động tạo lease mới, không phải heartbeat tự động. Nút **Hủy đăng ký** hiện gọi DELETE và xóa ownership; không tương đương soft unregister.
+Nó cần cho:
 
-Mất file khóa hoặc mất response cấp khóa lần đầu chưa có recovery API. Không thể suy ra secret từ hash. Cần operator xử lý hoặc dùng ID mới; không reset toàn bộ DB để chữa riêng một registration.
+- re-registration;
+- heartbeat;
+- update;
+- unregister;
+- DELETE.
 
-## 4. Automatic heartbeat, recovery và shutdown
+Không commit credential lên Git.
 
-`registered_agent` bắt đầu task nền; business API không phải đợi Registry đăng ký xong. SDK register lúc startup, lấy heartbeat interval từ response và gửi heartbeat định kỳ. Thành công renew lease; Agent có thể chạy qua nhiều chu kỳ TTL.
+Nếu đăng ký bằng Web trước, hãy lưu credential vào file rồi cấu hình Provider sử dụng đúng file đó.
 
-| Tình huống | SDK hiện xử lý |
-|---|---|
-| Heartbeat còn lease | Renew; SUSPECT có thể trở lại ONLINE |
-| Heartbeat trả 409 | Gửi lại card cùng credential để re-register |
-| Lỗi mạng, 408/429/5xx | Retry exponential backoff có jitter, tiếp tục phục vụ business API |
-| 401/403/404/422 và 4xx không retry khác | Dừng lifecycle với operator_required, không tự chiếm ID |
-| File credential không đọc/lưu được | operator_required |
-| Thoát context / Ctrl+C | Hủy task, cố gắng POST unregister trong tối đa 4s |
+Registry hiện không có API lấy lại credential đã mất.
 
-Retry timing không thay TTL của Registry. Không dùng `--lifespan off`; không chạy nhiều worker dùng chung ID. Registry restart với DB cũ giữ ownership/timestamp. Nếu DB bị xóa, token cũ không tự được chấp nhận cho ID mới.
+## 6. Provider không dùng Python
 
-## 5. Cấu hình các chương trình có sẵn
+Python SDK chỉ là tiện ích.
 
-Các chương trình đọc biến môi trường process; `.env.example` không tự được nạp. Trong PowerShell dùng `$env:TEN_BIEN = 'gia_tri'`.
+Agent viết bằng Java, JavaScript, Go hoặc ngôn ngữ khác vẫn tích hợp được bằng REST:
 
-| Biến | Chương trình | Mặc định |
-|---|---|---|
-| REGISTRY_DATABASE_URL | Registry | sqlite:///./registry.db |
-| REGISTRY_HEARTBEAT_SECONDS | Registry | 10 |
-| REGISTRY_TTL_SECONDS | Registry | 30 |
-| REGISTRY_SUSPECT_SECONDS | Registry | (heartbeat + TTL) / 2 nếu không đặt |
-| REGISTRY_URL | Providers, Travel, Planner | http://127.0.0.1:8000 |
-| WEATHER_AGENT_ID | Weather | weather-local |
-| WEATHER_ENDPOINT | Weather | http://127.0.0.1:8001/forecast |
-| WEATHER_CREDENTIAL_FILE | Weather | weather.credential |
-| NEWS_AGENT_ID | News | news-agent-01 |
-| NEWS_ENDPOINT | News | http://127.0.0.1:8002/invoke |
-| NEWS_CREDENTIAL_FILE | News | news.credential |
-| AGENT_RETRY_MAX_SECONDS | Weather, News | 10 |
-
-Registry yêu cầu `0 < heartbeat < suspect < TTL`; heartbeat/TTL là số nguyên giây. Retry max là số dương, giới hạn khoảng backoff chứ không giới hạn số lần thử. Các biến demo không tự được SDK đọc; chương trình truyền giá trị vào `registered_agent`.
-
-## 6. Consumer integration — discovery rồi invocation
-
-Lookup theo ID trả cả record không ONLINE; normal discovery chỉ trả ONLINE, kết hợp domain/capability bằng AND. Kết quả rỗng là hợp lệ:
-
-```powershell
-Invoke-RestMethod 'http://127.0.0.1:8000/v1/agents?domain=text&capability=echo_text'
-Invoke-RestMethod 'http://127.0.0.1:8000/v1/agents/echo-team-a'
-Invoke-RestMethod 'http://127.0.0.1:8000/v1/agents?active_only=false'
+```text
+POST /v1/agents
+POST /v1/agents/{id}/heartbeat
+POST /v1/agents/{id}/unregister
 ```
 
-Lệnh cuối phục vụ quan sát, không dùng để mặc định chọn provider. Consumer gọi endpoint trực tiếp; Registry không proxy. Nếu provider không dùng common convention, thay phần invocation bằng adapter đã thống nhất.
+Provider cần tự triển khai vòng:
 
-### Minimal Consumer Example
+```text
+startup
+  ↓
+register
+  ↓
+heartbeat định kỳ
+  ↓
+nếu 409 → authenticated re-register
+  ↓
+shutdown → unregister
+```
 
-Lưu `consumer.py` bên cạnh ví dụ provider. Schema output do consumer khai báo theo contract, không import source Registry:
+Chi tiết request/response xem [Registry API](api_contract.md).
+
+## 7. Consumer: tìm Provider
+
+Consumer không cần biết trước IP/port của Provider.
+
+Ví dụ tìm Agent có capability `echo_text`:
+
+```http
+GET /v1/agents?domain=text&capability=echo_text
+```
+
+Registry trả một danh sách Provider `ONLINE`.
+
+Consumer lấy endpoint trong kết quả rồi gọi trực tiếp:
+
+```text
+Consumer
+   │
+   │ discovery
+   ▼
+Registry
+   │
+   │ endpoint
+   ▼
+Consumer ─────────────► Provider
+        business call
+```
+
+Đây là điểm quan trọng:
+
+> **Discovery và Invocation là hai bước khác nhau.**
+
+Registry không proxy business request.
+
+## 8. Consumer bằng Python helper
+
+Nếu Provider dùng common invocation convention của repository:
 
 ```python
-import os
 import httpx
-from pydantic import BaseModel, ConfigDict
-from agent_registry_client.discovery import discover, DiscoveryError
-from agent_registry_client.invocation import invoke_first, InvocationError
+from agent_registry_client.discovery import discover
+from agent_registry_client.invocation import invoke_first
 
-class EchoOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    text: str
+with httpx.Client(timeout=5, trust_env=False) as http:
+    providers = discover(
+        http,
+        "http://127.0.0.1:8000",
+        "echo_text",
+        domain="text",
+    )
 
-try:
-    with httpx.Client(timeout=5, trust_env=False, follow_redirects=False) as http:
-        providers = discover(
-            http, os.getenv("REGISTRY_URL", "http://127.0.0.1:8000"),
-            "echo_text", domain="text",
-        )
-        output, provider_id = invoke_first(
-            http, providers, "echo_text", {"text": "Hello"}, EchoOutput,
-        )
-        print({"provider_id": provider_id, "output": output})
-except (DiscoveryError, InvocationError) as exc:
-    raise SystemExit(str(exc))
+    output, provider_id = invoke_first(
+        http,
+        providers,
+        "echo_text",
+        {"text": "Hello"},
+        output_schema=YourOutputModel,
+    )
 ```
 
-Chạy `python consumer.py` khi provider đã đăng ký. Consumer chỉ biết Registry URL và capability contract, không hard-code địa chỉ provider. Không gắn Bearer credential Registry vào HTTP client dùng gọi business endpoint.
+`YourOutputModel` là schema business do Provider và Consumer tự thống nhất.
 
-## 7. Endpoint change và LAN
+Nếu Provider không dùng convention này, Consumer có thể discovery bằng Registry rồi gọi endpoint theo protocol riêng.
 
-Dừng provider cũ, giữ Agent ID/credential, sửa endpoint quảng bá và host/port server rồi restart. Re-registration cập nhật binding. Với Weather, đổi cả WEATHER_ENDPOINT và Uvicorn `--port`; với News tương tự. PATCH cũng sửa binding nhưng không renew lease; sửa trên web có thể bị cấu hình service ghi đè ở lần re-registration sau.
+Xem [Invocation Contract](invocation_contract.md).
 
-Trên nhiều máy, `127.0.0.1` là chính máy đang gọi. Ví dụ Registry ở máy A, provider ở B, consumer ở C:
+## 9. Khi endpoint thay đổi
 
-- Registry/provider bind `--host 0.0.0.0` nếu cần nhận kết nối LAN.
-- REGISTRY_URL dùng IP/DNS của A; endpoint quảng bá dùng IP/DNS của B, **không dùng 0.0.0.0**.
-- Mở đúng port theo chính sách firewall; kiểm tra từ C bằng `Test-NetConnection <IP-provider> -Port <port>`.
-- Provider và consumer phải cùng thống nhất contract; ONLINE không bảo đảm route mạng từ C tới B.
+Ví dụ Agent ban đầu:
 
-Đây là hướng dẫn cấu hình, chưa phải kết quả kiểm thử cross-machine. HTTP demo dành cho mạng tin cậy; triển khai Internet cần HTTPS và kiểm soát truy cập phù hợp.
+```text
+text-team-a
+→ http://192.168.1.20:8010/invoke
+```
 
-## 8. Troubleshooting
+sau restart chuyển sang:
 
-| Triệu chứng | Kiểm tra / xử lý |
+```text
+text-team-a
+→ http://192.168.1.20:9010/invoke
+```
+
+Giữ:
+
+- cùng Agent ID;
+- cùng credential;
+
+và re-register với endpoint mới.
+
+Consumer discovery lần tiếp theo sẽ nhận binding mới, không cần sửa hard-code URL.
+
+## 10. Chạy trên nhiều máy
+
+Khi tất cả chạy trên cùng máy, `127.0.0.1` là đủ.
+
+Khi chạy trên nhiều máy:
+
+```text
+Máy A: Registry
+Máy B: Provider
+Máy C: Consumer
+```
+
+thì:
+
+- Provider phải quảng bá IP/DNS mà máy C truy cập được;
+- `REGISTRY_URL` phải trỏ tới máy A;
+- server cần bind `0.0.0.0` nếu nhận kết nối LAN;
+- **không quảng bá `0.0.0.0` làm endpoint**;
+- firewall phải cho phép đúng port cần thiết.
+
+Ví dụ:
+
+```text
+Registry: http://192.168.1.10:8000
+Provider endpoint: http://192.168.1.20:8010/invoke
+```
+
+`127.0.0.1` trên máy C luôn là **máy C**, không phải máy B.
+
+## 11. Troubleshooting nhanh
+
+| Hiện tượng | Ý nghĩa / kiểm tra |
 |---|---|
-| 401 | ID và credential có khớp? File có BOM, khóa cũ sau reset DB? Không xóa khóa để thử chiếm lại ID |
-| 404 khi heartbeat | Record sai ID hoặc bị DELETE; lifecycle dừng, cần operator |
-| 409 | Lease hết/unregistered; authenticated re-registration, SDK tự xử lý |
-| 422 | Kiểm tra card/query theo API contract; business input theo invocation contract |
-| 503 / reconnecting | Registry/DB/network tạm lỗi; xem log và chờ retry |
-| Discovery [] | Filter sai hoặc không có ONLINE provider; xem active_only=false |
-| Provider chạy nhưng không được tìm thấy | Kiểm tra /health.registration, Registry URL và file credential |
-| Endpoint vẫn cũ | Kiểm tra cấu hình provider, không chỉ card trên web; một process/ID |
-| Lỗi ghi file khóa | Thư mục tồn tại, có quyền ghi, file mới chưa có; xem operator_required |
-| Planner partial | Xem errors và stage discovery/invocation; phần còn lại có thể vẫn thành công |
-| /forecast hoạt động nhưng lease hết | Business API và lifecycle độc lập; kiểm tra task đăng ký, không heartbeat từ browser |
+| `401` | Credential thiếu hoặc sai |
+| `404` | Agent ID không còn tồn tại |
+| `409` heartbeat | Lease đã hết hoặc Agent đã unregister; cần re-register |
+| `422` | Agent Card hoặc request không đúng schema |
+| Discovery trả `[]` | Không có Provider `ONLINE` phù hợp hoặc filter sai |
+| Agent chạy nhưng không xuất hiện | Kiểm tra Registry URL, credential và lifecycle task |
+| Endpoint cũ | Kiểm tra Agent đã re-register với endpoint mới chưa |
+| Web đăng ký xong nhưng Agent thành UNREACHABLE | Chưa có Agent process thật gửi heartbeat |
 
-Giới hạn thiết kế xem [Architecture](architecture.md); phạm vi kiểm chứng xem [Verification](verification.md).
+## 12. Checklist tích hợp cho nhóm khác
+
+Provider:
+
+- [ ] Business API chạy được độc lập.
+- [ ] Có Agent ID ổn định.
+- [ ] Có domain và capability rõ ràng.
+- [ ] Endpoint truy cập được từ Consumer.
+- [ ] Register được với Registry.
+- [ ] Credential được lưu an toàn.
+- [ ] Heartbeat chạy tự động.
+- [ ] Restart cùng ID có thể re-register.
+- [ ] Endpoint thay đổi được cập nhật vào Registry.
+
+Consumer:
+
+- [ ] Chỉ biết Registry URL và capability cần dùng.
+- [ ] Không hard-code Provider endpoint.
+- [ ] Discovery trước khi invocation.
+- [ ] Có timeout và xử lý provider unavailable.
+- [ ] Validate response theo contract đã thống nhất.
+
+Chi tiết kiến trúc xem [Architecture](architecture.md). Phạm vi kiểm thử xem [Verification](verification.md).

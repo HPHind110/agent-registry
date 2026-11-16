@@ -1,151 +1,287 @@
 # Agent Registry
 
-Agent Registry là dịch vụ danh bạ cho các Agent độc lập: lưu Agent Card (metadata mô tả dịch vụ), tìm provider theo domain/capability và theo dõi heartbeat bằng lease. Client lấy endpoint từ Registry rồi gọi trực tiếp Provider Agent. Đây là project môn Hệ thống phân tán, sử dụng Python, FastAPI và SQLite.
+Agent Registry là dịch vụ **đăng ký và khám phá Agent** trong một hệ thống phân tán. Mỗi Provider Agent có thể đăng ký `Agent Card`, công bố các `capabilities` và `endpoint`, duy trì trạng thái bằng heartbeat; Client có thể tìm Agent phù hợp rồi gọi trực tiếp tới endpoint của Agent đó.
 
-## 1. Mục tiêu
+Project được xây dựng cho học phần **Hệ thống phân tán**, sử dụng Python, FastAPI và SQLite.
 
-- Đăng ký động và giữ Agent ID ổn định khi endpoint thay đổi (binding).
-- Discovery nhiều provider theo domain (lĩnh vực) và capability (chức năng).
-- Duy trì registration bằng heartbeat do chính Provider Agent gửi.
-- Bảo vệ quyền sửa registration bằng credential riêng của từng Agent ID.
-- Cho phép nhóm ngoài tích hợp qua REST hoặc Python SDK.
+## Tính năng chính
 
-Registry không chạy Agent, không heartbeat thay Agent, không xử lý business request như Message Broker/API Gateway và không điều phối multi-agent. Hiện chưa có replication/consensus.
+- Đăng ký và quản lý Agent Card.
+- Tìm kiếm Agent theo `domain` và `capability`.
+- Theo dõi trạng thái Agent bằng heartbeat và lease.
+- Cập nhật endpoint động mà không thay đổi Agent ID.
+- Credential riêng để bảo vệ quyền sở hữu Agent ID.
+- Web Dashboard để đăng ký, tìm kiếm và quản lý Agent.
+- REST API cho Agent viết bằng bất kỳ ngôn ngữ nào.
+- Python SDK hỗ trợ lifecycle, discovery và invocation.
 
-## 2. Kiến trúc tổng quan
+## Kiến trúc
 
 ```mermaid
-flowchart TD
-    W[Weather Agent] -->|register / heartbeat| R[Agent Registry]
-    N[News Agent] -->|register / heartbeat| R
-    P[Planner Client] -->|discovery| R
-    P -->|direct invocation| W
-    P -->|direct invocation| N
-    R --> D[(SQLite)]
+flowchart LR
+    A[Provider Agent] -->|register / heartbeat| R[Agent Registry]
+    C[Client / Consumer] -->|discovery| R
+    R --> DB[(SQLite)]
+
+    C -->|direct invocation| A
+
+    H[Web Dashboard] --> R
 ```
 
-Registry lưu card, ownership và thời hạn lease. Provider Agent cung cấp HTTP API nghiệp vụ; Client / Consumer tìm và sử dụng API đó. SDK hỗ trợ lifecycle phía provider, discovery và quy ước invocation phía consumer. Dashboard là giao diện quan sát/quản lý cùng Registry.
+Registry chịu trách nhiệm về **directory, discovery và lifecycle metadata**. Business request không đi qua Registry:
 
-## 3. Luồng hoạt động chính
+```text
+Client
+   │
+   │ discover capability
+   ▼
+Registry
+   │
+   │ provider + endpoint
+   ▼
+Client ───────────────► Provider Agent
+        direct call
+```
 
-1. Provider khởi động, tạo Agent Card từ cấu hình.
-2. Provider đăng ký hoặc re-register bằng credential đã lưu.
-3. Task nền của provider tự heartbeat để Registry renew lease; business API chạy song song.
-4. Consumer discovery capability cần dùng; mặc định chỉ nhận provider `ONLINE`.
-5. Consumer gọi **endpoint nhận được** trực tiếp và xử lý response/lỗi theo contract đã thống nhất.
+Registry **không phải** Message Broker, API Gateway hay multi-agent orchestrator.
 
-TTL không giới hạn thời gian chạy Agent: heartbeat đều duy trì registration qua nhiều chu kỳ lease. `ONLINE` phản ánh tín hiệu gần đây, không bảo đảm endpoint truy cập được từ mọi client.
+## Cấu trúc repository
 
-## 4. Các thành phần trong repository
+```text
+agent-registry/
+├── registry/                 # Registry server, REST API và Web Dashboard
+├── agent_registry_client/    # Python SDK cho Provider/Consumer
+├── demo/                     # Weather, News và các client mẫu
+├── docs/                     # Tài liệu kiến trúc và tích hợp
+├── tests/                    # Automated tests
+├── scripts/                  # Smoke/integration tests
+├── requirements.txt
+└── README.md
+```
+
+## Bắt đầu
+
+### 1. Clone repository
+
+```bash
+git clone https://github.com/HPHind110/agent-registry.git
+cd agent-registry
+```
+
+### 2. Tạo môi trường Python
+
+Yêu cầu Python **3.11+**.
+
+PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+### 3. Khởi động Agent Registry
+
+```powershell
+python -m uvicorn registry.main:app --port 8000
+```
+
+Sau khi server chạy:
+
+- **Web Dashboard:** http://127.0.0.1:8000/
+- **Swagger API:** http://127.0.0.1:8000/docs
+- **Health check:** http://127.0.0.1:8000/v1/health
+
+Dữ liệu Registry mặc định được lưu trong SQLite tại `registry.db`.
+
+## Web Dashboard
+
+Web Dashboard là giao diện chính dành cho người quản lý và demo hệ thống.
+
+### Đăng ký Agent
+
+Chọn **Đăng ký Agent** và khai báo:
+
+- Agent ID
+- Name
+- Domain
+- Capabilities
+- Endpoint
+- Version
+- Description
+
+Ví dụ:
+
+```text
+Agent ID:      weather-agent-01
+Domain:        weather
+Capabilities: weather_forecast
+Endpoint:      http://192.168.1.20:8001/forecast
+Version:       1.0
+```
+
+Khi tạo Agent ID mới, Registry cấp một **credential** dùng để chứng minh quyền sở hữu Agent đó. Credential cần được lưu lại để cập nhật, re-register hoặc xóa registration sau này.
+
+> Đăng ký Agent Card trên Web chỉ khai báo Agent với Registry. Nó **không khởi động chương trình Agent** và Web Dashboard cũng **không gửi heartbeat thay Agent**.
+
+### Tìm kiếm Agent
+
+Danh bạ hỗ trợ lọc theo:
+
+- `Capability`
+- `Domain`
+- trạng thái hoạt động
+
+Ví dụ Client cần capability `weather_forecast`, Registry có thể trả về một hoặc nhiều Provider Agent đang cung cấp capability đó cùng endpoint tương ứng.
+
+### Quản lý Agent
+
+Từ Dashboard có thể:
+
+- xem Agent Card;
+- xem endpoint hiện tại;
+- xem heartbeat và lease;
+- xem trạng thái Agent;
+- cập nhật metadata;
+- re-register;
+- xóa registration.
+
+## Agent lifecycle
+
+Một Provider Agent thông thường có vòng đời:
+
+```text
+Start Agent
+    │
+    ▼
+Register Agent Card
+    │
+    ▼
+  ONLINE
+    │
+    │ heartbeat
+    ├───────────────┐
+    │               │
+    ▼               │
+  ONLINE ◄──────────┘
+    │
+    │ mất heartbeat
+    ▼
+  SUSPECT
+    │
+    │ lease hết hạn
+    ▼
+UNREACHABLE
+```
+
+Nếu Agent khởi động lại với cùng `Agent ID` và credential, nó có thể re-register và cập nhật endpoint mới.
+
+Chi tiết về state machine, lease và failure handling xem [Architecture](docs/architecture.md).
+
+## Tích hợp Agent mới
+
+Một Agent bên ngoài có hai cách làm việc với Registry.
+
+### REST API
+
+REST API không phụ thuộc ngôn ngữ lập trình.
+
+Các thao tác chính:
+
+| Method | Endpoint | Chức năng |
+|---|---|---|
+| `POST` | `/v1/agents` | Register / re-register |
+| `GET` | `/v1/agents` | Discovery |
+| `GET` | `/v1/agents/{agent_id}` | Lookup Agent |
+| `POST` | `/v1/agents/{agent_id}/heartbeat` | Renew lease |
+| `PATCH` | `/v1/agents/{agent_id}` | Update Agent Card |
+| `POST` | `/v1/agents/{agent_id}/unregister` | Graceful unregister |
+| `DELETE` | `/v1/agents/{agent_id}` | Xóa registration |
+| `GET` | `/v1/health` | Registry health |
+
+Chi tiết request, response và error semantics xem [API Contract](docs/api_contract.md).
+
+### Python SDK
+
+Package `agent_registry_client/` cung cấp helper cho:
+
+- register;
+- heartbeat tự động;
+- re-registration;
+- graceful shutdown;
+- discovery;
+- direct provider invocation.
+
+Hướng dẫn tích hợp đầy đủ xem [Agent Integration Guide](docs/agent_integration.md).
+
+## Discovery và Invocation
+
+Hai khái niệm này được tách riêng.
+
+**Discovery** trả lời:
+
+> Agent nào cung cấp capability tôi cần, và endpoint của nó là gì?
+
+**Invocation** là bước Client gọi trực tiếp Provider Agent sau khi discovery.
+
+```text
+Client
+   │
+   │ GET /v1/agents?capability=...
+   ▼
+Registry
+   │
+   │ Agent Card + endpoint
+   ▼
+Client
+   │
+   │ HTTP request
+   ▼
+Provider Agent
+```
+
+Registry không proxy business traffic giữa các Agent.
+
+Quy ước invocation dùng trong các demo của repository được mô tả tại [Invocation Contract](docs/invocation_contract.md).
+
+## Demo mẫu
+
+Repository có một số thành phần mẫu để kiểm tra khả năng tích hợp:
 
 | Thành phần | Vai trò |
 |---|---|
-| `registry/` | REST API, service, SQLite, lease/status và dashboard |
-| `agent_registry_client/` | SDK lifecycle, discovery và invocation |
-| `demo/weather_agent.py` | Provider thời tiết với dữ liệu cố định |
-| `demo/news_agent.py` | Provider tìm tin mẫu và trích câu đầu để tóm tắt |
-| `demo/travel_client.py` | Consumer cũ: discovery Weather rồi gọi GET |
-| `demo/planner_client.py` | Consumer gọi Weather và News, tổng hợp kết quả complete/partial |
-| `tests/`, `scripts/` | Automated tests và smoke test bằng process/HTTP thật |
-| `docs/` | Kiến trúc, contract, tích hợp và kiểm chứng |
+| `Weather Agent` | Provider capability về thời tiết |
+| `News Agent` | Provider tìm kiếm/tóm tắt tin mẫu |
+| `Travel Client` | Consumer đơn giản dùng Weather |
+| `Planner Client` | Consumer discovery và sử dụng nhiều Provider |
 
-## 5. Quick Start — PowerShell
+Các demo này dùng dữ liệu cố định để việc kiểm thử có kết quả ổn định. Chúng **không phải thành phần bắt buộc của Agent Registry**.
 
-Cần Python **3.11+**. Node.js chỉ cần nếu chạy test dashboard. Từ thư mục repository:
+Hướng dẫn tích hợp và các scenario kiểm thử xem:
 
-```powershell
-Set-Location C:\agent-registry
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt
-```
+- [Agent Integration Guide](docs/agent_integration.md)
+- [Verification](docs/verification.md)
 
-Mở bốn terminal, chạy `Set-Location C:\agent-registry` trong mỗi terminal. `.env.example` là tài liệu cấu hình, **không tự nạp**; đặt biến bằng `$env:`. Chạy một process cho mỗi Agent ID, không thêm `--workers` hoặc tắt lifespan.
+## Tài liệu
 
-### Terminal 1 — Registry
-
-```powershell
-$env:REGISTRY_HEARTBEAT_SECONDS = '10'
-$env:REGISTRY_SUSPECT_SECONDS = '20'
-$env:REGISTRY_TTL_SECONDS = '30'
-.\.venv\Scripts\python -m uvicorn registry.main:app --port 8000
-```
-
-### Terminal 2 — Weather
-
-```powershell
-$env:REGISTRY_URL = 'http://127.0.0.1:8000'
-$env:WEATHER_AGENT_ID = 'weather-local'
-$env:WEATHER_ENDPOINT = 'http://127.0.0.1:8001/forecast'
-$env:WEATHER_CREDENTIAL_FILE = 'weather.credential'
-.\.venv\Scripts\python -m uvicorn demo.weather_agent:app --port 8001
-```
-
-### Terminal 3 — News
-
-```powershell
-$env:REGISTRY_URL = 'http://127.0.0.1:8000'
-$env:NEWS_AGENT_ID = 'news-agent-01'
-$env:NEWS_ENDPOINT = 'http://127.0.0.1:8002/invoke'
-$env:NEWS_CREDENTIAL_FILE = 'news.credential'
-.\.venv\Scripts\python -m uvicorn demo.news_agent:app --port 8002
-```
-
-### Terminal 4 — Planner
-
-Chờ hai provider báo đăng ký thành công, rồi chạy:
-
-```powershell
-$env:REGISTRY_URL = 'http://127.0.0.1:8000'
-.\.venv\Scripts\python -m demo.planner_client --city Hanoi
-```
-
-Kết quả mong đợi: `status: complete`, `weather` có nhiệt độ 26, `news` có hai tin mẫu, `providers_used` ghi hai provider và `errors: {}`. Planner chạy xong rồi thoát; ba terminal server tiếp tục chạy. Consumer cũ chạy bằng `.\.venv\Scripts\python -m demo.travel_client --city Hanoi`.
-
-Giữ file credential qua các lần restart. Nếu ID đã được đăng ký trên web hoặc bằng bản chạy khác, cần đúng credential của ID đó; xem [hướng dẫn tích hợp](docs/agent_integration.md).
-
-## 6. Registry API — tóm tắt
-
-| Method | Route | Mục đích |
-|---|---|---|
-| POST | `/v1/agents` | Register / authenticated re-registration |
-| GET | `/v1/agents` | Discovery theo capability/domain; mặc định chỉ ONLINE |
-| GET | `/v1/agents/{agent_id}` | Lookup ID, kể cả registration không ONLINE |
-| PATCH | `/v1/agents/{agent_id}` | Sửa card, không renew lease |
-| POST | `/v1/agents/{agent_id}/heartbeat` | Renew lease còn hiệu lực |
-| GET | `/v1/agents/{agent_id}/status` | Xem trạng thái suy luận |
-| POST | `/v1/agents/{agent_id}/unregister` | Rút registration, giữ ownership |
-| DELETE | `/v1/agents/{agent_id}` | Xóa record và giải phóng ID |
-| GET | `/v1/health` | Kiểm tra Registry và kết nối DB |
-
-Thử API tại [Swagger UI](http://127.0.0.1:8000/docs); schema và quy tắc đầy đủ nằm trong [API Contract](docs/api_contract.md).
-
-## 7. Failure & Recovery demo
-
-- **Provider crash:** dùng Task Manager kết thúc đúng PID Weather trong log Uvicorn; Ctrl+C là graceful shutdown, không phải crash. Sau heartbeat cuối, Registry suy luận `ONLINE → SUSPECT → UNREACHABLE`. Normal discovery loại provider ngay từ SUSPECT; Planner vẫn trả News với `status: partial`.
-- **Provider recovery:** giữ ID/file credential, đặt `WEATHER_ENDPOINT` thành `http://127.0.0.1:9005/forecast`, chạy lại Weather với `--port 9005`. Re-registration cập nhật binding; Planner lần chạy tiếp theo lấy endpoint mới.
-- **Registry outage:** dừng Registry, giữ hai provider chạy. Business API vẫn phục vụ; SDK retry. Bật Registry với cùng DB, provider tự reconnect/re-register khi cần. Không reset DB trong demo này.
-
-## 8. Web Dashboard
-
-Mở [Dashboard](http://127.0.0.1:8000/) để xem card, endpoint, heartbeat cuối, lease và trạng thái. Trang đọc lại dữ liệu mỗi 5 giây khi đang hiển thị; không gửi heartbeat. Đăng ký card trên web **không khởi chạy Agent**; phải cấp credential cho chương trình provider. Nút “Hủy đăng ký” hiện thực hiện DELETE, xóa cả ownership; khác graceful `/unregister`.
-
-## 9. Documentation
-
-| Document | Nội dung |
+| Tài liệu | Nội dung |
 |---|---|
-| [Architecture](docs/architecture.md) | Thành phần, lifecycle, state machine và quyết định thiết kế |
-| [API Contract](docs/api_contract.md) | Public Registry REST API |
-| [Agent Integration](docs/agent_integration.md) | Tích hợp provider/consumer, cấu hình và troubleshooting |
-| [Invocation Contract](docs/invocation_contract.md) | Quy ước gọi provider, Weather/News và kết quả Planner |
-| [Verification](docs/verification.md) | Chiến lược test, lệnh chạy và kết quả kiểm chứng |
+| [Architecture](docs/architecture.md) | Kiến trúc hệ thống, lifecycle và quyết định thiết kế |
+| [API Contract](docs/api_contract.md) | Public REST API của Registry |
+| [Agent Integration](docs/agent_integration.md) | Hướng dẫn Provider/Consumer tích hợp Registry |
+| [Invocation Contract](docs/invocation_contract.md) | Quy ước gọi Provider trong demo |
+| [Verification](docs/verification.md) | Test strategy và các scenario đã kiểm chứng |
 
-## 10. Current Limitations
+## Giới hạn hiện tại
 
-- Một Registry instance dùng SQLite; chưa replication, phân trang hoặc benchmark tải.
-- Không active probe; lease dựa trên đồng hồ Registry và không chứng minh process đã chết.
-- Chưa instance fencing: hai process cùng ID/credential có thể ghi đè hoặc unregister nhau.
-- Chưa credential rotation/recovery; mất credential hoặc response cấp khóa đầu tiên cần operator xử lý.
-- Đọc danh bạ và đăng ký ID mới chưa có admission control; HTTP demo dành cho local/LAN tin cậy, chưa triển khai Internet production.
-- Common invocation là quy ước đã thỏa thuận; Agent Card chưa mô tả schema, HTTP method hay phiên bản protocol để tự gọi mọi Agent.
-- Travel cũ chưa validate schema forecast; Planner có validate output. Weather/News dùng dữ liệu mẫu.
-- Chưa kiểm chứng LAN nhiều máy, tích hợp nhóm ngoài hoặc browser E2E; phạm vi đã chạy ghi trong Verification.
+Phiên bản hiện tại tập trung vào bài toán service discovery và lifecycle trong phạm vi project môn học:
+
+- một Registry instance với SQLite;
+- chưa có Registry replication hoặc consensus;
+- health dựa trên heartbeat/lease, chưa active probe endpoint;
+- chưa có instance fencing cho nhiều process cùng Agent ID;
+- chưa hỗ trợ credential rotation/recovery hoàn chỉnh;
+- môi trường mục tiêu hiện tại là local/LAN qua HTTP;
+- invocation contract trong demo là quy ước chung của project, chưa phải protocol Agent phổ quát.
+
+Các giới hạn và quyết định thiết kế chi tiết hơn được trình bày trong [Architecture](docs/architecture.md).

@@ -59,7 +59,7 @@ def main():
         env = os.environ | {
             'SMOKE_CONTROL_DIR': directory,
             'REGISTRY_DATABASE_URL': f'sqlite:///{Path(directory).as_posix()}/registry.db',
-            'REGISTRY_TTL_SECONDS': '3', 'REGISTRY_HEARTBEAT_SECONDS': '1',
+            'REGISTRY_SUSPECT_SECONDS': '2', 'REGISTRY_TTL_SECONDS': '3', 'REGISTRY_HEARTBEAT_SECONDS': '1',
             'REGISTRY_URL': base, 'WEATHER_AGENT_ID': 'smoke-weather',
             'WEATHER_ENDPOINT': f'http://127.0.0.1:{weather_port}/forecast',
             'WEATHER_CREDENTIAL_FILE': str(Path(directory) / 'weather.credential')}

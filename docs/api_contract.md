@@ -80,3 +80,18 @@ POST `/v1/agents/{id}/unregister`: Bearer bắt buộc, trả 200 AgentView vớ
 Health states dùng enum ONLINE, SUSPECT, UNREACHABLE, UNREGISTERED. Đây là thay đổi literal so với ACTIVE/EXPIRED. Ngưỡng suspect mặc định (interval+TTL)/2, cấu hình REGISTRY_SUSPECT_SECONDS, bắt buộc interval < suspect < TTL. Discovery loại SUSPECT ngay dù lease chưa hết. Registry không probe; không có kết luận process đã chết.
 
 Weather GET `/health`: {live:true, ready:true, registration:"registered"}; registration có thể starting/reconnecting/operator_required/unregistered/disabled. Ready chỉ phản ánh business API độc lập với việc đăng ký. Heartbeat renew lease không làm thay đổi endpoint; PATCH sửa binding không renew; re-register sửa card và renew.
+
+
+## Generic integration (16/11/2026)
+
+Registry backend và schema DB giữ nguyên. SDK public: agent_registry_client, import legacy còn hỗ trợ. Weather GET /forecast giữ nguyên, thêm POST /forecast common envelope. News POST /invoke hỗ trợ search_news/summarize_news deterministic. Planner tách discover → invoke_first → build_plan, validate identity/capability/business output, failover, trả kết quả partial khi một capability lỗi. Registry không proxy business traffic. Contract và ví dụ REST/SDK/LAN đầy đủ: [agent_integration.md](agent_integration.md).
+
+```mermaid
+flowchart TD
+    W[Weather] -->|register / heartbeat| R[Registry]
+    N[News] -->|register / heartbeat| R
+    P[Planner] -->|discovery| R
+    P -->|POST forecast| W
+    P -->|POST invoke| N
+    R --> D[(SQLite)]
+```

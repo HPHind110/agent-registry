@@ -41,3 +41,18 @@ Chưa có incarnation/fencing; một process/ID/credential, không chạy --work
 Không bảo đảm phục hồi response cấp credential bị thất lạc, không key rotation/admin account. Web đăng ký không tự cấp khóa vào service; operator phải lưu đúng file và cấu hình service. Web không gửi heartbeat; GET polling không renew. Điều chỉnh Card trên web có thể bị cấu hình service ghi đè khi re-register.
 
 Test: fake clock cho boundary, MockTransport cho lỗi mạng, TestClient cho API, process/HTTP thật cho smoke. Không tuyên bố kiểm chứng LAN, cross-team hoặc browser E2E.
+
+
+## Generic integration (16/11/2026)
+
+Registry backend và schema DB giữ nguyên. SDK public: agent_registry_client, import legacy còn hỗ trợ. Weather GET /forecast giữ nguyên, thêm POST /forecast common envelope. News POST /invoke hỗ trợ search_news/summarize_news deterministic. Planner tách discover → invoke_first → build_plan, validate identity/capability/business output, failover, trả kết quả partial khi một capability lỗi. Registry không proxy business traffic. Contract và ví dụ REST/SDK/LAN đầy đủ: [agent_integration.md](agent_integration.md).
+
+```mermaid
+flowchart TD
+    W[Weather] -->|register / heartbeat| R[Registry]
+    N[News] -->|register / heartbeat| R
+    P[Planner] -->|discovery| R
+    P -->|POST forecast| W
+    P -->|POST invoke| N
+    R --> D[(SQLite)]
+```

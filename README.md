@@ -9,7 +9,7 @@ Python 3.11+, FastAPI/Uvicorn, Pydantic, SQLAlchemy/SQLite, pytest/httpx. Regist
 - `registry/database.py`: ORM và migration SQLite bổ sung cột withdrawn.
 - `registry/leases.py`: trạng thái tính từ clock server; `health.py`: quan sát thay đổi để ghi log.
 - `registry/dashboard.html`: web tổng quát; chỉ refresh GET, không gửi heartbeat.
-- `demo/registry_client.py`: lifecycle dùng lại được; `weather_agent.py`: tích hợp bằng FastAPI lifespan.
+- `agent_registry_client/`: SDK lifecycle/discovery/invocation; `demo/registry_client.py` giữ import cũ; `weather_agent.py`: tích hợp bằng FastAPI lifespan.
 - `demo/travel_client.py`: discovery và gọi trực tiếp endpoint nhận được.
 
 ## Cài đặt và kiểm tra (PowerShell)
@@ -95,3 +95,61 @@ Ngưỡng mặc định: heartbeat=10s, suspect=20s, TTL=30s. Nếu không đặ
 - Test UI là DOM giả, chưa phải browser E2E.
 
 Chi tiết: [API](docs/api_contract.md), [kiến trúc](docs/architecture.md), [kiểm chứng](docs/verification.md).
+
+
+## Generic integration: bốn terminal
+
+Đọc [hướng dẫn tích hợp bên ngoài](docs/agent_integration.md) trước khi nối service của nhóm khác. Backend Registry không đổi nghiệp vụ/schema DB trong đợt này. Endpoint vẫn là URL operation đầy đủ. Weather GET/Travel cũ giữ nguyên; POST common protocol v1 là phần bổ sung.
+
+Mỗi terminal chạy `Set-Location C:\agent-registry` trước. Không dùng --lifespan off.
+
+Terminal 1:
+
+```powershell
+$env:REGISTRY_TTL_SECONDS='30'
+$env:REGISTRY_HEARTBEAT_SECONDS='10'
+$env:REGISTRY_SUSPECT_SECONDS='20'
+.\.venv\Scripts\python -m uvicorn registry.main:app --port 8000
+```
+
+Terminal 2:
+
+```powershell
+$env:REGISTRY_URL='http://127.0.0.1:8000'
+$env:WEATHER_AGENT_ID='weather-generic-demo'
+$env:WEATHER_ENDPOINT='http://127.0.0.1:8001/forecast'
+$env:WEATHER_CREDENTIAL_FILE='weather-generic-demo.credential'
+.\.venv\Scripts\python -m uvicorn demo.weather_agent:app --port 8001
+```
+
+Terminal 3:
+
+```powershell
+$env:REGISTRY_URL='http://127.0.0.1:8000'
+$env:NEWS_AGENT_ID='news-agent-01'
+$env:NEWS_ENDPOINT='http://127.0.0.1:8002/invoke'
+$env:NEWS_CREDENTIAL_FILE='news.credential'
+.\.venv\Scripts\python -m uvicorn demo.news_agent:app --port 8002
+```
+
+Terminal 4:
+
+```powershell
+$env:REGISTRY_URL='http://127.0.0.1:8000'
+.\.venv\Scripts\python -m demo.planner_client --city Hanoi
+```
+
+Kết quả: status=complete, weather có nhiệt độ 26, news có hai bài liên quan Hanoi, providers_used chứa Weather và News, errors={}. Không cần mở browser. Đợi hơn 90 giây, hai provider vẫn ONLINE nhờ heartbeat nền.
+
+Crash Weather bằng Task Manager đúng PID: sau SUSPECT/UNREACHABLE, Planner in partial, weather=null, news vẫn có dữ liệu, errors.weather giải thích lỗi. Khởi động lại Weather cùng ID/file ở port 9005 (đổi cả WEATHER_ENDPOINT và --port), Planner lần sau gọi được binding mới. Ctrl+C là unregister tử tế, khác crash. Đăng ký Finance qua REST theo integration guide không cần sửa Registry; nếu không heartbeat record tự hết hạn.
+
+Chạy regression và integration:
+
+```powershell
+.\.venv\Scripts\python -m pytest -q
+node --test tests/dashboard.test.cjs
+.\.venv\Scripts\python scripts/smoke_test.py
+.\.venv\Scripts\python -m scripts.generic_smoke_test
+```
+
+Cài SDK ở project khác: `python -m pip install C:\agent-registry`. Không cần cài FastAPI cho SDK; protocol REST có thể dùng từ ngôn ngữ khác. Common invocation là quy ước demo đã thỏa thuận, không tự mô tả mọi operation của mọi Agent.

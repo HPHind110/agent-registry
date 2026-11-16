@@ -11,3 +11,7 @@ backups/
 *.log
 .env.*
 !.env.example
+
+*.egg-info/
+build/
+dist/

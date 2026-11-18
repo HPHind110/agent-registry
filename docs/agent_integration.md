@@ -306,6 +306,19 @@ Consumer discovery lần tiếp theo sẽ nhận binding mới, không cần s�
 
 ## 10. Chạy trên nhiều máy
 
+**Trước khi cấu hình URL, phân biệt ba tình huống:**
+
+| Mô hình | `REGISTRY_URL` ở máy gọi | Ý nghĩa |
+|---|---|---|
+| Registry và Agent/Client cùng máy | `http://127.0.0.1:8000` | Local Registry |
+| Registry trên VPS qua SSH tunnel được mở **trên chính máy Agent/Client** | `http://127.0.0.1:18000` (nếu forward cổng 18000) | Chỉ riêng máy đang có tunnel dùng được |
+| Registry chung qua mạng | URL HTTPS hoặc private-network URL được cấp | Chỉ áp dụng sau khi thiết lập phương án truy cập an toàn |
+
+**Từ một laptop, tunnel chỉ tạo kết nối tới Registry trên VPS, không làm cho endpoint của Provider ở laptop khác tự truy cập được.** Các nhóm cần kiểm tra cả hai chiều: Agent/Client ↔ Registry và Client → Provider.
+
+Hướng dẫn cụ thể cho VPS, systemd, tunnel, local CLI, cập nhật code: [Deployment & Operations](deployment.md).
+
+
 Khi tất cả chạy trên cùng máy, `127.0.0.1` là đủ.
 
 Khi chạy trên nhiều máy:

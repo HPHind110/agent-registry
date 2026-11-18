@@ -198,6 +198,13 @@ Smoke test vẫn dùng process và HTTP thật để bổ sung cho các test gi�
 
 ## 6. Những gì chưa được kiểm chứng đầy đủ
 
+### VPS service: kiểm tra thủ công, không phải cross-machine test
+
+Nhóm đã kiểm tra thủ công **một Agent Registry instance** trên VPS Ubuntu 24.04: process do `systemd` quản lý báo `active (running)`, `ss` hiển thị bind `127.0.0.1:8000`, SQLite file tồn tại và `/v1/health` trả `status: ok`. Sau khi restart, một request ngay lập tức đã gặp `Connection refused` nhưng request sau thành công; hiện chưa xác định được nguyên nhân chắc chắn, có thể do startup chưa sẵn sàng.
+
+Phạm vi **chưa** kiểm tra xong: reboot recovery thực tế, preservation của registration thật sau restart, SSH/HTTPS exposure và các máy khác dùng chung Registry VPS, Agent-to-Agent invocation giữa các mạng, cross-team integration. Xem [Deployment & Operations](deployment.md) để phân biệt CLI local với SSH tunnel.
+
+
 Hiện test chủ yếu chạy trong local/loopback.
 
 Chưa coi là đã kiểm chứng đầy đủ:

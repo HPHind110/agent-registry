@@ -13,7 +13,7 @@ Project được xây dựng cho học phần **Hệ thống phân tán**, sử 
 - Credential riêng để bảo vệ quyền sở hữu Agent ID.
 - Web Dashboard để đăng ký, tìm kiếm và quản lý Agent.
 - REST API cho Agent viết bằng bất kỳ ngôn ngữ nào.
-- Python SDK hỗ trợ lifecycle, discovery và invocation.
+- Python SDK hỗ trợ lifecycle, discovery và invocation, với rediscovery-on-failure có giới hạn cho thao tác an toàn để retry.
 
 ## Kiến trúc
 
@@ -59,7 +59,21 @@ agent-registry/
 └── README.md
 ```
 
-## Bắt đầu
+## Chọn cách chạy và truy cập
+
+**Clone repository không đồng nghĩa kết nối đến Registry trên VPS.** Có thể dùng cùng một codebase để chạy hai Registry độc lập, với database và danh sách Agent riêng.
+
+| Tình huống | Registry chạy ở đâu? | Cách truy cập |
+|---|---|---|
+| Phát triển local qua CLI | Chính laptop | Mở `http://127.0.0.1:8000/` |
+| Kiểm tra Registry đã deploy | VPS Ubuntu, do `systemd` quản lý | SSH tunnel từ Windows: mở `http://127.0.0.1:18000/` |
+| Agent/Client ở máy khác | Registry trên máy chủ/mạng có thể kết nối tới | Dùng **base URL mạng chung đã được cấu hình an toàn**, không dùng URL tunnel của laptop khác |
+
+**Dashboard (`/`), Swagger (`/docs`) và REST API thuộc cùng một ứng dụng FastAPI.** Tunnel không tạo thêm server hay bản sao Registry; nó chỉ chuyển tiếp kết nối từ laptop tới VPS.
+
+Hướng dẫn VPS, SSH tunnel, `systemd` và cập nhật code: [Deployment & Operations](docs/deployment.md).
+
+## Chạy Registry local trên Windows
 
 ### 1. Clone repository
 
@@ -92,7 +106,32 @@ Sau khi server chạy:
 - **Swagger API:** http://127.0.0.1:8000/docs
 - **Health check:** http://127.0.0.1:8000/v1/health
 
-Dữ liệu Registry mặc định được lưu trong SQLite tại `registry.db`.
+Dữ liệu Registry mặc định được lưu trong SQLite tại `registry.db` (tính từ thư mục chạy lệnh). Đây là **database local**, không phải SQLite của Registry trên VPS.
+
+## Mở Registry trên VPS qua SSH tunnel
+
+Áp dụng **khi Registry đã được triển khai trên VPS và đang chạy bằng `systemd`**, bind `127.0.0.1:8000`. Không khởi chạy thêm một bản Uvicorn trên VPS nếu service đang dùng port đó.
+
+Trên **Windows PowerShell (ngoài phiên SSH)**:
+
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\agent_registry_vps" -N -L 18000:127.0.0.1:8000 registryadmin@<VPS_IP>
+```
+
+Đổi `<VPS_IP>` thành địa chỉ VPS được cấp; `registryadmin` và tên file key là ví dụ theo môi trường triển khai, thay nếu máy của bạn dùng thông tin khác. Giữ cửa sổ tunnel mở, rồi truy cập **trên chính laptop đó**:
+
+- **Dashboard VPS:** http://127.0.0.1:18000/
+- **Swagger VPS:** http://127.0.0.1:18000/docs
+- **Health VPS:** http://127.0.0.1:18000/v1/health
+
+Điểm cần nhớ:
+
+- `127.0.0.1` luôn chỉ **máy đang thực hiện kết nối**. `18000` là cổng local của tunnel; `8000` là cổng ứng dụng trên VPS.
+- Tắt SSH tunnel thì **đường truy cập từ laptop bị đóng**, nhưng Registry do `systemd` quản lý vẫn chạy.
+- **Không** đưa `http://127.0.0.1:18000` vào cấu hình `REGISTRY_URL` của các máy khác, trừ khi mỗi máy có tunnel riêng đã được thiết lập và được phép sử dụng.
+- Hiện triển khai VPS chỉ lắng nghe loopback; **chưa được coi là endpoint công khai cho cả lớp**. Trước khi mở ra Internet cần HTTPS hoặc mạng riêng, kiểm soát quyền truy cập/đăng ký và firewall phù hợp. Không mở trần port `8000` hay Dashboard chưa có xác thực quản trị.
+
+Chi tiết lệnh khởi tạo và vận hành xem [Deployment & Operations](docs/deployment.md).
 
 ## Web Dashboard
 
@@ -242,7 +281,7 @@ Provider Agent
 
 Registry không proxy business traffic giữa các Agent.
 
-Quy ước invocation dùng trong các demo của repository được mô tả tại [Invocation Contract](docs/invocation_contract.md).
+Quy ước invocation dùng trong các demo của repository được mô tả tại [Invocation Contract](docs/invocation_contract.md). Consumer helper `invoke_with_rediscovery(..., safe_to_retry=True)` có thể discovery lại **tối đa một lần** sau khi các binding đã thử đều lỗi, chỉ dành cho nghiệp vụ an toàn khi gọi lặp lại; nó không tự nhận push notification hoặc tự phát hiện endpoint mới.
 
 ## Demo mẫu
 
@@ -271,6 +310,7 @@ Hướng dẫn tích hợp và các scenario kiểm thử xem:
 | [Agent Integration](docs/agent_integration.md) | Hướng dẫn Provider/Consumer tích hợp Registry |
 | [Invocation Contract](docs/invocation_contract.md) | Quy ước gọi Provider trong demo |
 | [Verification](docs/verification.md) | Test strategy và các scenario đã kiểm chứng |
+| [Deployment & Operations](docs/deployment.md) | Chạy local/VPS, SSH tunnel, systemd, cập nhật từ GitHub và các lưu ý bảo mật |
 
 ## Giới hạn hiện tại
 
@@ -281,7 +321,7 @@ Phiên bản hiện tại tập trung vào bài toán service discovery và life
 - health dựa trên heartbeat/lease, chưa active probe endpoint;
 - chưa có instance fencing cho nhiều process cùng Agent ID;
 - chưa hỗ trợ credential rotation/recovery hoàn chỉnh;
-- môi trường mục tiêu hiện tại là local/LAN qua HTTP;
+- đã kiểm tra thủ công việc Registry chạy dưới `systemd` và trả `/v1/health` trên một VPS Ubuntu; chưa chứng minh tích hợp nhiều máy/nhóm khác hoặc truy cập Internet công khai an toàn;
 - invocation contract trong demo là quy ước chung của project, chưa phải protocol Agent phổ quát.
 
 Các giới hạn và quyết định thiết kế chi tiết hơn được trình bày trong [Architecture](docs/architecture.md).

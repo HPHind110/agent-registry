@@ -16,6 +16,14 @@ ARTICLES = (
 
 @asynccontextmanager
 async def lifespan(app):
+    mode = os.getenv('NEWS_REGISTRY_MODE', 'auto')
+    if mode == 'manual':
+        app.state.lifecycle = None
+        yield
+        return
+    if mode != 'auto':
+        raise ValueError("NEWS_REGISTRY_MODE must be 'auto' or 'manual'")
+
     card = dict(agent_id=os.getenv('NEWS_AGENT_ID', 'news-agent-01'), name='News Agent',
                 domain='news', description='Deterministic local news demonstration',
                 capabilities=['search_news', 'summarize_news'], version='1.0',

@@ -3,8 +3,8 @@ import argparse
 import json
 import os
 import httpx
-from agent_registry_client.discovery import discover, DiscoveryError
-from agent_registry_client.invocation import invoke_first, InvocationError
+from agent_registry_client.discovery import DiscoveryError
+from agent_registry_client.invocation import invoke_with_rediscovery, InvocationError
 from .contracts import WeatherOutput, SearchOutput
 
 
@@ -15,8 +15,9 @@ def build_plan(registry_url, city, http):
         ('news', 'search_news', 'news', {'keyword': city}, SearchOutput),
     ):
         try:
-            providers = discover(http, registry_url, capability, domain)
-            output, agent_id = invoke_first(http, providers, capability, data, schema)
+            output, agent_id = invoke_with_rediscovery(
+                http, registry_url, capability, data, schema, domain=domain, safe_to_retry=True,
+            )
             result[section] = output['articles'] if section == 'news' else output
             result['providers_used'].append({'agent_id': agent_id, 'capability': capability})
         except DiscoveryError as exc:

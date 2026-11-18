@@ -252,27 +252,28 @@ Nếu Provider dùng common invocation convention của repository:
 
 ```python
 import httpx
-from agent_registry_client.discovery import discover
-from agent_registry_client.invocation import invoke_first
+from agent_registry_client.invocation import invoke_with_rediscovery
 
 with httpx.Client(timeout=5, trust_env=False) as http:
-    providers = discover(
+    output, provider_id = invoke_with_rediscovery(
         http,
         "http://127.0.0.1:8000",
         "echo_text",
-        domain="text",
-    )
-
-    output, provider_id = invoke_first(
-        http,
-        providers,
-        "echo_text",
         {"text": "Hello"},
         output_schema=YourOutputModel,
+        domain="text",
+        safe_to_retry=True,  # echo_text chỉ trả lại dữ liệu đầu vào.
     )
 ```
 
 `YourOutputModel` là schema business do Provider và Consumer tự thống nhất.
+
+Mặc định `safe_to_retry=False` chỉ thử danh sách đầu. Với phép đọc an toàn,
+bật tùy chọn này cho phép một lượt discovery bổ sung nếu các Provider đều lỗi.
+SDK chỉ gọi các cặp Agent ID và endpoint chưa thử. HTTP 400/422 ngăn lượt bổ
+sung khi failover ban đầu thất bại. Consumer có thể tiếp tục dùng `discover()`
+và `invoke_first()` để tự quản lý hai bước. Dùng HTTP client riêng cho Consumer,
+giữ credential quản lý registration trong chương trình Provider.
 
 Nếu Provider không dùng convention này, Consumer có thể discovery bằng Registry rồi gọi endpoint theo protocol riêng.
 

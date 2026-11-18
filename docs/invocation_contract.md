@@ -187,15 +187,9 @@ Demo hiện chỉ lấy câu đầu để tạo summary. Nó không gọi LLM ho
 | Provider lỗi | HTTP `5xx` hoặc lỗi kết nối |
 | Response sai JSON/schema | Consumer coi invocation thất bại |
 
-Discovery failure và invocation failure là hai loại lỗi khác nhau:
-
-```text
-Không tìm thấy Provider
-→ discovery failure
-
-Tìm thấy Provider nhưng gọi thất bại
-→ invocation failure
-```
+Lỗi đọc Registry ở lần discovery đầu phát sinh `DiscoveryError`. Nếu Registry trả
+danh sách rỗng, lần đọc đã thành công và Consumer báo `InvocationError` với
+thông điệp `No ONLINE provider`. Cả hai trường hợp đều dừng ngay.
 
 ## 6. Nhiều Provider và failover
 
@@ -222,6 +216,42 @@ Các lỗi như network, HTTP, JSON hoặc response schema không hợp lệ có
 Điều này phù hợp với các operation đọc trong demo.
 
 Với operation có side effect như thanh toán hoặc ghi dữ liệu, không nên tự động retry/failover nếu chưa thiết kế idempotency.
+
+### Rediscovery khi binding đã đổi
+
+`invoke_with_rediscovery(..., domain=..., safe_to_retry=True)` discovery rồi thử
+các Provider theo thứ tự như trên. Kết quả hợp lệ đầu tiên kết thúc lượt gọi.
+Khi tất cả đều lỗi, helper hỏi lại Registry đúng một lần với cùng capability,
+domain và bộ lọc ONLINE. Nếu bất kỳ Provider nào trả HTTP 400/422, helper vẫn
+thử hết danh sách đầu nhưng bỏ qua rediscovery khi danh sách đó thất bại.
+
+Ví dụ Weather B đổi cổng trong lúc Client đang xử lý một request:
+
+1. Client discovery Weather B ở cổng 8001.
+2. B chuyển sang 8010 và re-register thành công với cùng Agent ID.
+3. Client gọi endpoint 8001 vừa nhận và gặp lỗi kết nối.
+4. Client discovery lại, nhận endpoint 8010 và gọi trực tiếp B tại đó.
+5. Client kiểm tra Agent ID, capability và output schema rồi trả kết quả.
+
+Giới hạn cho mỗi capability là **hai lượt discovery và hai lượt thử danh sách
+Provider**. Lượt thứ hai có thể thử nhiều binding mới. Mỗi cặp
+`(agent_id, endpoint)` chỉ được gọi một lần trong toàn bộ thao tác.
+
+| Kết quả sau lượt invocation đầu thất bại | Consumer trả về |
+|---|---|
+| Rediscovery tắt hoặc input bị từ chối | `InvocationError` của lượt đầu |
+| Đọc lại Registry lỗi | `DiscoveryError` với thông điệp `Rediscovery failed` |
+| Danh sách mới rỗng hoặc chỉ có binding đã thử | `InvocationError` với `no new provider binding` |
+| Thử hết binding mới vẫn lỗi | `InvocationError` với `Invocation after rediscovery failed` và nguyên nhân tóm tắt của hai lượt |
+
+Registry phải nhận cập nhật binding trước lần discovery thứ hai thì Client mới
+nhận được endpoint mới. Consumer chỉ biết địa chỉ Registry trả về. Giao thức
+hiện tại không dò IP, không push cập nhật và không chờ Provider re-register.
+
+`safe_to_retry` mặc định là `False` và chỉ điều khiển **lượt bổ sung**. Failover
+trong danh sách đầu vẫn có hiệu lực. Nếu timeout xảy ra sau khi Provider đã ghi
+dữ liệu, gọi Provider khác có thể thực hiện cùng tác vụ lần nữa. Caller chỉ nên
+bật rediscovery khi biết tác vụ an toàn để thực hiện lặp lại.
 
 ## 7. Planner Client dùng contract này thế nào?
 
@@ -252,7 +282,8 @@ Planner
 combine
 ```
 
-Nếu một bên lỗi, Planner vẫn giữ kết quả phần còn lại và trả `status: partial`.
+Planner bật rediscovery cho cả hai capability đọc dữ liệu. Nếu một bên lỗi,
+Planner vẫn giữ kết quả phần còn lại và trả `status: partial`.
 
 Planner là consumer demo, không phải multi-agent orchestrator.
 

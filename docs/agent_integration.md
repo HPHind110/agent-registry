@@ -83,6 +83,59 @@ Quan trọng:
 
 Nếu không có Agent process thật gửi heartbeat, registration sẽ dần chuyển khỏi `ONLINE`.
 
+### News Agent: Manual Mode vs SDK Auto Mode
+
+Dùng Registry đang chạy. Các lệnh dưới đây giả sử PowerShell mở ở thư mục project. Mỗi lần chỉ chạy một process News trên cổng 8002. Chọn URL của **cùng một Registry** cho Dashboard, heartbeat và discovery.
+
+**AUTO (mặc định).** Trong terminal Provider:
+
+```powershell
+$env:NEWS_REGISTRY_MODE = 'auto'
+$env:REGISTRY_URL = 'http://127.0.0.1:8000'
+$env:NEWS_ENDPOINT = 'http://127.0.0.1:8002/invoke'
+.\.venv\Scripts\python -m uvicorn demo.news_agent:app --host 0.0.0.0 --port 8002
+```
+
+SDK đọc `NEWS_CREDENTIAL_FILE` (mặc định `news.credential`), đăng ký hoặc re-register và lưu khóa khi được cấp lần đầu. Sau đó SDK gửi heartbeat, retry khi Registry tạm mất kết nối và re-register nếu lease đã hết. Ctrl+C khiến SDK cố gắng graceful unregister, giữ lại identity và ownership. Khi demo qua nhiều máy, đặt `NEWS_ENDPOINT` thành địa chỉ Consumer truy cập được.
+
+**MANUAL.** Trong terminal Provider:
+
+```powershell
+$env:NEWS_REGISTRY_MODE = 'manual'
+$env:NEWS_AGENT_ID = 'news-agent-01'
+.\.venv\Scripts\python -m uvicorn demo.news_agent:app --host 0.0.0.0 --port 8002
+```
+
+1. News phục vụ `POST /invoke` và `GET /health` ngay cả khi Registry chưa chạy. Giá trị `registration: disabled` ở `/health` cho biết lifecycle SDK đã tắt. News không cần `REGISTRY_URL`, `NEWS_ENDPOINT` hay file credential.
+2. Mở Dashboard, chọn **Đăng ký Agent**. Điền ID `news-agent-01`, tên `News Agent`, domain `news`, mô tả `Manual REST integration demo`, capabilities `search_news, summarize_news`, version `1.0`. Endpoint là `http://<PROVIDER_IP>:8002/invoke`, thay placeholder bằng IP/DNS mà Consumer truy cập được. Khi tất cả cùng máy có thể dùng `http://127.0.0.1:8002/invoke`.
+3. Lưu riêng credential Dashboard cấp một lần. News trả Agent ID trong response, nên ID trên card phải trùng `NEWS_AGENT_ID`. Nếu ID đã có từ demo AUTO, chọn card cũ và **Đăng ký lại** bằng credential cũ, hoặc dùng ID mới cho cả process và card.
+4. Từ PowerShell thứ hai trên máy Provider, gửi **một** heartbeat. Nhập credential vào dấu nhắc PowerShell, không nhập vào process News:
+
+```powershell
+$registry = 'http://127.0.0.1:8000'  # Dùng URL tunnel nếu Dashboard mở qua tunnel.
+$id = 'news-agent-01'
+$secret = Read-Host 'Registry credential' -AsSecureString
+$headers = @{ Authorization = 'Bearer ' + ([pscredential]::new($id, $secret)).GetNetworkCredential().Password }
+Invoke-RestMethod -Method Post -Uri "$registry/v1/agents/$id/heartbeat" -Headers $headers |
+    Select-Object status, last_heartbeat, lease_expires_at
+```
+
+Một heartbeat chỉ gia hạn lease một lần. Gửi lại theo interval của Registry nếu muốn duy trì discovery. Khi heartbeat trả 409, dùng **Đăng ký lại** với credential cũ rồi tiếp tục. Trong Dashboard, **Sửa card** cập nhật metadata, **Hủy đăng ký** gọi DELETE và xóa cả record lẫn ownership. Dừng News ở MANUAL không thay đổi card; lease sẽ hết nếu bên vận hành ngừng gửi heartbeat.
+
+**Discovery và invocation (dùng chung hai chế độ).** Tại Consumer, đặt URL Registry theo góc nhìn của máy đó và ID đúng với demo. Chạy khi card còn ONLINE:
+
+```powershell
+$registry = 'http://127.0.0.1:8000'
+$providers = Invoke-RestMethod "$registry/v1/agents?domain=news&capability=search_news"
+$news = $providers | Where-Object agent_id -eq 'news-agent-01' | Select-Object -First 1
+if (-not $news) { throw 'News Agent is not ONLINE' }
+$body = @{ capability = 'search_news'; input = @{ keyword = 'Hanoi' } } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri $news.endpoint -ContentType 'application/json' -Body $body |
+    ConvertTo-Json -Depth 6
+```
+
+Consumer nhận hai bài mẫu về Hanoi từ News. Request nghiệp vụ gửi thẳng tới endpoint trong card, không mang credential của Registry. Registry quản lý card, ownership và lease trong cả hai chế độ.
+
 ## 4. Provider bằng Python SDK
 
 Với Python, cách khuyến nghị là dùng package `agent_registry_client`.

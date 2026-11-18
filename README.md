@@ -185,6 +185,17 @@ Từ Dashboard có thể:
 - re-register;
 - xóa registration.
 
+### News Agent: Manual Mode vs SDK Auto Mode
+
+Chọn một chế độ rồi chạy News từ thư mục project. Registry có thể đang chạy local hoặc được truy cập qua tunnel.
+
+| `NEWS_REGISTRY_MODE` | Luồng demo |
+|---|---|
+| `auto` (mặc định) | Bật News → SDK đăng ký và gửi heartbeat định kỳ → Consumer discovery rồi gọi News. SDK cố gắng unregister khi News dừng bằng Ctrl+C. |
+| `manual` | Bật News → đăng ký card trên Dashboard → lưu credential riêng → gửi heartbeat bằng REST từ máy Provider → Consumer discovery rồi gọi News. News chỉ phục vụ HTTP và không cần credential. |
+
+Hai chế độ dùng chung `POST /invoke` và `GET /health`. Xem [lệnh PowerShell, card mẫu và cách thử cả hai chế độ](docs/agent_integration.md#news-agent-manual-mode-vs-sdk-auto-mode).
+
 ## Agent lifecycle
 
 Một Provider Agent thông thường có vòng đời:

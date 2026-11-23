@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Header, Depends, Query, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -20,9 +20,12 @@ def service(request: Request):
 
 
 @router.post('/agents', response_model=Registration, response_model_exclude_none=True, status_code=201,
-             responses={200: {'model': Registration}, 401: {'description': 'Invalid ownership credential'}})
-def register(card: AgentCard, response: Response, token=Depends(credential), svc=Depends(service)):
-    result, created = svc.register(card, token)
+             responses={200: {'model': Registration}, 401: {'description': 'Invalid ownership credential'},
+                        403: {'description': 'Join token required or invalid'},
+                        503: {'description': 'New registrations disabled or database unavailable'}})
+def register(card: AgentCard, response: Response, token=Depends(credential), svc=Depends(service),
+             join_token: str | None = Header(default=None, alias='X-Registry-Join-Token')):
+    result, created = svc.register(card, token, join_token)
     response.status_code = 201 if created else 200
     response.headers['Cache-Control'] = 'no-store'
     return result

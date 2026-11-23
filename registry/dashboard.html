@@ -52,6 +52,7 @@ button{border:1px solid transparent;border-radius:8px;background:#17684e;color:w
 <label class="field full">Capabilities<textarea id="card-capabilities" required placeholder="Mỗi khả năng một dòng, hoặc ngăn cách bằng dấu phẩy"></textarea><small>Tối đa 100 khả năng. Khoảng trắng và dấu gạch ngang được đổi thành dấu gạch dưới.</small></label>
 <label class="field full">Endpoint<input id="card-endpoint" type="url" required maxlength="2048" placeholder="https://your-service.example/api"><small>URL HTTP(S) đầy đủ mà client có thể gọi; không chứa username, password hoặc fragment.</small></label>
 <label class="field full">Mô tả<textarea id="card-description" maxlength="1000" placeholder="Agent cung cấp dịch vụ gì?"></textarea></label>
+<label id="join-field" class="field full">Join token của Registry<input id="join-token" type="password" autocomplete="off" spellcheck="false"><small>Xin token từ nhóm Registry để tạo ID mới. Chỉ để trống khi Registry local cho phép.</small></label>
 <label id="editor-auth" class="field full" hidden>Credential của Agent<input id="editor-token" type="password" autocomplete="off" spellcheck="false"><small>Chỉ nhập khóa, không thêm chữ Bearer. Không lưu sau khi đóng biểu mẫu.</small></label>
 </div><div id="editor-message" class="notice error" role="alert" hidden></div>
 <div class="dialog-footer"><button type="button" class="secondary" id="editor-cancel">Hủy</button><button id="editor-submit" type="submit">Đăng ký Agent</button></div></form>
@@ -62,6 +63,11 @@ button{border:1px solid transparent;border-radius:8px;background:#17684e;color:w
 <div class="notice info">Lưu credential ngay. Server chỉ cấp khóa này một lần và không có chức năng lấy lại. Khóa sẽ bị xóa khỏi trang khi bạn đóng thông báo.</div>
 <label class="field">Credential mới<input id="new-token" class="credential" type="password" readonly autocomplete="off" spellcheck="false"></label>
 <div class="actions" style="margin-top:12px"><button class="secondary" id="reveal-token">Hiện khóa</button><button id="copy-token">Sao chép credential</button></div><p id="copy-message" class="muted" role="status"></p>
+<div class="actions"><button id="download-key">Tải credential</button><button class="secondary" id="download-config">Tải cấu hình JSON</button></div>
+<p>Mất credential có thể khiến bạn mất quyền sửa card hoặc đăng ký lại ID. Giữ file khóa riêng trên máy Provider, ngoài repository.</p>
+<p><b>Python SDK:</b> Cài package trong project của bạn, trỏ SDK tới file credential rồi chạy Provider để SDK đăng ký lại, retry và gửi heartbeat.</p>
+<p><b>REST:</b> Provider chạy độc lập và tự lên lịch heartbeat bằng Bearer credential. Khi lease hết, gửi lại card và credential để đăng ký lại.</p>
+<p><a href="/docs">Registry API</a> · <a href="https://github.com/HPHind110/agent-registry/blob/main/docs/agent_integration.md" target="_blank" rel="noreferrer">Hướng dẫn tích hợp Provider</a></p>
 <div class="subsection"><label class="check"><input type="checkbox" id="saved-token">Tôi đã lưu credential ở nơi riêng và hiểu rằng không thể lấy lại.</label></div>
 <div class="dialog-footer"><button id="secret-done" disabled>Đã lưu, tiếp tục</button></div>
 </dialog>
@@ -81,6 +87,7 @@ button{border:1px solid transparent;border-radius:8px;background:#17684e;color:w
 'use strict';
 const $ = id => document.getElementById(id);
 const cardFields = ['agent_id','name','domain','version','capabilities','endpoint','description'];
+let downloadConfig = null;
 let selected = null, editorMode = 'create', editorBusy = false, managerBusy = false, refreshGeneration = 0, managerGeneration = 0;
 // Untrusted Agent Card strings are rendered only as text, never HTML.
 function element(tag, text = '', className = '') {
@@ -90,17 +97,19 @@ function message(id, text = '', error = false) {
   const el = $(id); el.textContent = text; el.className = 'notice' + (error ? ' error' : ''); el.hidden = !text;
 }
 function errorText(status, body) {
-  const known = {401:'Credential thiếu hoặc không đúng. Nếu ID đã tồn tại, hãy mở Agent đó và chọn Đăng ký lại với khóa cũ.',404:'Agent không còn tồn tại. Hãy làm mới danh bạ.',409:'Lease đã hết hạn. Hãy chọn Đăng ký lại bằng credential của Agent.',503:'Registry hoặc cơ sở dữ liệu tạm không sẵn sàng. Thử lại sau.'};
+  const known = {403:'Cần join token hợp lệ để tạo ID mới. Liên hệ quản trị Registry.',401:'Credential thiếu hoặc không đúng. Nếu ID đã tồn tại, hãy mở Agent đó và chọn Đăng ký lại với khóa cũ.',404:'Agent không còn tồn tại. Hãy làm mới danh bạ.',409:'Lease đã hết hạn. Hãy chọn Đăng ký lại bằng credential của Agent.',503:'Registry hoặc cơ sở dữ liệu tạm không sẵn sàng. Thử lại sau.'};
+  if (status === 503 && body?.detail === 'New registrations are disabled') return 'Registry đang khóa tạo ID mới. Liên hệ quản trị Registry.';
   if (status === 422 && Array.isArray(body?.detail)) return 'Dữ liệu chưa hợp lệ:\n' + body.detail.map(e => (e.loc || []).filter(x => x !== 'body').join('.') + ': ' + e.msg).join('\n');
   return known[status] || ('HTTP ' + status + ': ' + (typeof body?.detail === 'string' ? body.detail : 'Không thực hiện được yêu cầu.'));
 }
-async function api(path, {method = 'GET', body, token} = {}) {
+async function api(path, {method = 'GET', body, token, joinToken} = {}) {
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 15000);
   try {
     const headers = {};
     if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (joinToken) headers['X-Registry-Join-Token'] = joinToken;
     if (token) headers.Authorization = 'Bearer ' + token;
-    const response = await fetch(path, {method, headers, body:body === undefined ? undefined : JSON.stringify(body), cache:'no-store', signal:controller.signal});
+    const response = await fetch(path, {method, headers, body:body === undefined ? undefined : JSON.stringify(body), cache:'no-store', redirect:'error', signal:controller.signal});
     const data = response.status === 204 ? null : await response.json();
     if (!response.ok) throw new Error(errorText(response.status, data));
     return data;
@@ -147,6 +156,7 @@ async function refresh() {
 function openEditor(mode, agent = null, token = '') {
   editorMode = mode; $('card-form').reset(); message('editor-message');
   for (const key of cardFields) $('card-' + key).value = agent ? (key === 'capabilities' ? agent[key].join('\n') : agent[key]) : (key === 'version' ? '1.0' : '');
+  $('join-field').hidden = mode !== 'create'; $('join-token').value = '';
   $('card-agent_id').readOnly = mode !== 'create'; $('editor-auth').hidden = mode === 'create'; $('editor-token').required = mode !== 'create'; $('editor-token').value = token;
   $('editor-title').textContent = {create:'Đăng ký Agent mới',edit:'Sửa Agent Card',reregister:'Đăng ký lại Agent'}[mode];
   $('editor-submit').textContent = mode === 'edit' ? 'Lưu thay đổi' : mode === 'create' ? 'Đăng ký Agent' : 'Đăng ký lại & gia hạn';
@@ -167,24 +177,42 @@ $('card-form').addEventListener('submit',async event => {
     editorBusy = true; $('editor-submit').disabled = true; $('editor-cancel').disabled = true;
     let result;
     if (editorMode === 'edit') { const {agent_id,...patch} = card; result = await api('/v1/agents/' + encodeURIComponent(agent_id),{method:'PATCH',body:patch,token}); }
-    else result = await api('/v1/agents',{method:'POST',body:card,token:editorMode === 'create' ? undefined : token});
+    else result = await api('/v1/agents',{method:'POST',body:card,joinToken:editorMode === 'create' ? $('join-token').value : undefined,token:editorMode === 'create' ? undefined : token});
     $('editor').close();
     if (result.credential) {
-      $('secret-agent').textContent = 'Agent ID: ' + result.agent_id; $('new-token').value = result.credential; $('new-token').type = 'password';
+      downloadConfig = {
+        REGISTRY_URL: window.location.origin, AGENT_ID: result.agent_id, AGENT_ENDPOINT: result.endpoint,
+        AGENT_DOMAIN: result.domain, AGENT_CAPABILITIES: result.capabilities,
+        AGENT_NAME: result.name, AGENT_DESCRIPTION: result.description, AGENT_VERSION: result.version,
+        AGENT_CREDENTIAL_FILE: 'agent-' + result.agent_id + '.credential'
+      };
+      $('secret-agent').textContent = result.agent_id + ' · ' + result.status + ' · Heartbeat mỗi ' + result.heartbeat_interval_seconds + 's · Lease ' + result.ttl_seconds + 's'; $('new-token').value = result.credential; $('new-token').type = 'password';
       $('reveal-token').textContent = 'Hiện khóa'; $('saved-token').checked = false; $('secret-done').disabled = true; $('copy-message').textContent = ''; $('secret').showModal();
     } else message('page-message',editorMode === 'edit' ? 'Đã cập nhật Agent Card. Lease không thay đổi.' : 'Đã đăng ký lại Agent và gia hạn lease.');
     refresh();
   } catch (error) { message('editor-message',error.message,true); }
-  finally { editorBusy = false; $('editor-submit').disabled = false; $('editor-cancel').disabled = false; }
+  finally { $('join-token').value = ''; editorBusy = false; $('editor-submit').disabled = false; $('editor-cancel').disabled = false; }
 });
 $('editor-cancel').onclick = () => $('editor').close();
 $('editor').addEventListener('cancel',event => { if (editorBusy) event.preventDefault(); });
-$('editor').addEventListener('close',() => { $('editor-token').value = ''; });
+$('editor').addEventListener('close',() => { $('join-token').value = ''; $('editor-token').value = ''; });
 $('secret').addEventListener('cancel',event => event.preventDefault());
-$('secret').addEventListener('close',() => { $('new-token').value = ''; });
+$('secret').addEventListener('close',() => { $('new-token').value = ''; downloadConfig = null; });
 $('saved-token').onchange = () => { $('secret-done').disabled = !$('saved-token').checked; };
 $('secret-done').onclick = () => { if ($('saved-token').checked) $('secret').close(); };
 $('reveal-token').onclick = () => { const show = $('new-token').type === 'password'; $('new-token').type = show ? 'text' : 'password'; $('reveal-token').textContent = show ? 'Ẩn khóa' : 'Hiện khóa'; };
+function downloadFile(name, contents, type) {
+  const url = URL.createObjectURL(new Blob([contents], {type}));
+  const link = document.createElement('a');
+  link.href = url; link.download = name;
+  try { link.click(); } finally { setTimeout(() => URL.revokeObjectURL(url), 0); }
+}
+$('download-key').onclick = () => {
+  if (downloadConfig) downloadFile(downloadConfig.AGENT_CREDENTIAL_FILE, $('new-token').value, 'text/plain');
+};
+$('download-config').onclick = () => {
+  if (downloadConfig) downloadFile('agent-' + downloadConfig.AGENT_ID + '.json', JSON.stringify(downloadConfig, null, 2), 'application/json');
+};
 $('copy-token').onclick = async () => {
   try { await navigator.clipboard.writeText($('new-token').value); $('copy-message').textContent = 'Đã sao chép. Hãy lưu khóa ở nơi riêng trước khi tiếp tục.'; }
   catch { $('new-token').type = 'text'; $('reveal-token').textContent = 'Ẩn khóa'; $('new-token').focus(); $('new-token').select(); $('copy-message').textContent = 'Trình duyệt không cho sao chép tự động. Nhấn Ctrl+C để sao chép khóa đã chọn.'; }

@@ -1,5 +1,6 @@
 """Real loopback HTTP + independent processes. Uses an isolated temporary DB."""
 import os
+import secrets
 from pathlib import Path
 import socket
 import subprocess
@@ -57,7 +58,7 @@ def main():
     processes = []
     with tempfile.TemporaryDirectory(prefix='registry-smoke-') as directory:
         env = os.environ | {
-            'SMOKE_CONTROL_DIR': directory,
+            'REGISTRY_JOIN_TOKEN': secrets.token_urlsafe(32), 'SMOKE_CONTROL_DIR': directory,
             'REGISTRY_DATABASE_URL': f'sqlite:///{Path(directory).as_posix()}/registry.db',
             'REGISTRY_SUSPECT_SECONDS': '2', 'REGISTRY_TTL_SECONDS': '3', 'REGISTRY_HEARTBEAT_SECONDS': '1',
             'REGISTRY_URL': base, 'WEATHER_AGENT_ID': 'smoke-weather',

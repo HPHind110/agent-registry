@@ -35,7 +35,7 @@ def card():
 @pytest.fixture
 def env(tmp_path):
     clock = Clock()
-    settings = Settings(database_url=f'sqlite:///{(tmp_path / "registry.db").as_posix()}')
+    settings = Settings(allow_open_registration=True, database_url=f'sqlite:///{(tmp_path / "registry.db").as_posix()}')
     app = create_app(settings, clock)
     with TestClient(app) as client:
         yield client, clock, settings

@@ -74,8 +74,11 @@ Registry **không kiểm tra endpoint có thực sự truy cập được hay kh
 
 ### Tạo Agent ID mới
 
+Xin join token qua kênh riêng của nhóm vận hành. Gửi qua HTTPS trong header dưới đây, không đưa vào URL hoặc Agent Card. Server so sánh token trước khi tạo record. Thiếu hoặc sai trả 403. Khi quản trị viên chưa cấu hình token, tạo ID mới trả 503; các ID đã tồn tại vẫn dùng credential như trước. Chế độ local mở cần bật rõ ràng.
+
 ```http
 POST /v1/agents
+X-Registry-Join-Token: <join-token>
 Content-Type: application/json
 ```
 
@@ -108,7 +111,7 @@ Re-registration:
 - tạo lease mới;
 - đưa Agent trở lại `ONLINE`.
 
-Nếu ID đã tồn tại nhưng credential thiếu hoặc sai, Registry trả `401`.
+Nếu ID đã tồn tại nhưng credential thiếu hoặc sai, Registry trả `401`. Join token không cấp quyền sửa ID đã tồn tại. Sau DELETE, tạo lại ID cần qua admission như ID mới.
 
 ## 4. Discovery
 
@@ -282,10 +285,11 @@ Credential:
 | HTTP | Ý nghĩa |
 |---|---|
 | `401` | Credential thiếu hoặc sai |
+| `403` | Tạo ID mới thiếu join token hợp lệ |
 | `404` | Agent ID không tồn tại |
 | `409` | Heartbeat không còn hợp lệ; cần re-register |
 | `422` | Dữ liệu request/query không hợp lệ |
-| `503` | Registry/database tạm thời không sẵn sàng |
+| `503` | Registry/database tạm thời không sẵn sàng hoặc server đang khóa tạo ID mới |
 
 Client nên xử lý theo HTTP status code, không phụ thuộc vào nội dung câu tiếng Anh trong error message.
 

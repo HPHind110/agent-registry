@@ -1,6 +1,7 @@
 """Real Registry + Weather + News + Planner processes, isolated state."""
 import json
 import os
+import secrets
 from pathlib import Path
 import subprocess
 import sys
@@ -18,7 +19,7 @@ def main():
             ports.add(free_port())
         rp, wp, np, new_wp = ports
         base = f'http://127.0.0.1:{rp}'
-        env = os.environ | {'SMOKE_CONTROL_DIR': directory, 'REGISTRY_URL': base,
+        env = os.environ | {'REGISTRY_JOIN_TOKEN': secrets.token_urlsafe(32), 'SMOKE_CONTROL_DIR': directory, 'REGISTRY_URL': base,
             'REGISTRY_DATABASE_URL': f'sqlite:///{Path(directory).as_posix()}/registry.db',
             'REGISTRY_HEARTBEAT_SECONDS': '1', 'REGISTRY_SUSPECT_SECONDS': '3', 'REGISTRY_TTL_SECONDS': '5',
             'WEATHER_AGENT_ID': 'smoke-weather', 'NEWS_AGENT_ID': 'smoke-news',

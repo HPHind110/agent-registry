@@ -73,7 +73,7 @@ Nếu Agent restart ở địa chỉ khác, giữ nguyên `agent_id` và cập n
 1. chạy Registry;
 2. mở Web Dashboard;
 3. bấm **Đăng ký Agent**;
-4. nhập Agent Card;
+4. nhập Agent Card và join token cho ID mới;
 5. lưu credential được cấp;
 6. dùng bộ lọc Domain/Capability để kiểm tra Agent đã xuất hiện.
 
@@ -136,6 +136,52 @@ Invoke-RestMethod -Method Post -Uri $news.endpoint -ContentType 'application/jso
 
 Consumer nhận hai bài mẫu về Hanoi từ News. Request nghiệp vụ gửi thẳng tới endpoint trong card, không mang credential của Registry. Registry quản lý card, ownership và lease trong cả hai chế độ.
 
+### Onboarding Provider trên Windows
+
+1. Khởi chạy dịch vụ nghiệp vụ của bạn. Chọn endpoint mà máy Consumer có thể gọi. Nếu URL chứa token hoặc thông tin bí mật, hãy tách thông tin đó khỏi URL trước khi công bố card.
+2. Mở [Dashboard HTTPS](https://103-180-134-53.sslip.io/), chọn **Đăng ký Agent**, điền card và join token do người vận hành cấp. Nếu đã có ID, chọn **Đăng ký lại** với ownership credential.
+3. Trong hộp thoại thành công, tải **credential** và **cấu hình JSON**. Chuyển hai file vào thư mục riêng của tài khoản chạy Provider, ví dụ `$HOME\agent-config`. Đặt cùng thư mục, giữ tên file credential khớp với JSON. Nếu trình duyệt tự thêm `(1)` vào tên file, sửa lại tên hoặc cập nhật đường dẫn. Credential là khóa bí mật duy nhất được cấp cho ID. Cấu hình chứa metadata công khai và đường dẫn khóa. Cả hai cách dưới đây đều dùng được sau khi đóng Dashboard.
+4. Nạp JSON trong PowerShell. Đổi `agent-text-team-a.json` thành tên file đã tải:
+
+```powershell
+$configPath = Join-Path $HOME 'agent-config\agent-text-team-a.json'
+$c = Get-Content -Raw -LiteralPath $configPath | ConvertFrom-Json
+$keyPath = Join-Path (Split-Path $configPath) $c.AGENT_CREDENTIAL_FILE
+$env:REGISTRY_URL = $c.REGISTRY_URL
+$env:AGENT_ID = $c.AGENT_ID
+$env:AGENT_ENDPOINT = $c.AGENT_ENDPOINT
+$env:AGENT_NAME = $c.AGENT_NAME
+$env:AGENT_DESCRIPTION = $c.AGENT_DESCRIPTION
+$env:AGENT_VERSION = $c.AGENT_VERSION
+$env:AGENT_DOMAIN = $c.AGENT_DOMAIN
+$env:AGENT_CAPABILITIES = $c.AGENT_CAPABILITIES -join ','
+$env:AGENT_CREDENTIAL_FILE = $keyPath
+```
+
+**A. Python SDK.** Trong virtualenv của Provider, cài SDK theo mục 4. Dùng card đầy đủ của dịch vụ (cùng ID, endpoint, domain và capabilities đã đăng ký). Truyền `os.environ["REGISTRY_URL"]` và `os.environ["AGENT_CREDENTIAL_FILE"]` cho `registered_agent`. SDK đọc file, re-register và chạy heartbeat, retry, phục hồi lease. Khi SDK tự tạo ID thay cho Dashboard, truyền thêm `join_token=os.getenv("REGISTRY_JOIN_TOKEN")`. Cấp token qua môi trường riêng, không đặt vào source. Sau khi có file credential, SDK chỉ dùng Bearer cho các lần đăng ký lại.
+
+Ví dụ với News AUTO có sẵn, sau khi nạp JSON:
+
+```powershell
+$env:NEWS_AGENT_ID = $c.AGENT_ID
+$env:NEWS_ENDPOINT = $c.AGENT_ENDPOINT
+$env:NEWS_CREDENTIAL_FILE = $keyPath
+$env:NEWS_REGISTRY_MODE = 'auto'
+.\.venv\Scripts\python -m uvicorn demo.news_agent:app --host 0.0.0.0 --port 8002
+```
+
+Weather dùng `WEATHER_AGENT_ID`, `WEATHER_ENDPOINT`, `WEATHER_CREDENTIAL_FILE` và mặc định cổng 8001. Cả hai dùng `REGISTRY_URL`. Chọn card khớp domain/capabilities cố định của từng demo vì SDK gửi lại card khi startup. File JSON là mẫu tích hợp, demo không tự đọc file.
+
+**B. REST từ bất kỳ ngôn ngữ nào.** Với ID vừa đăng ký trên Web, thử một heartbeat từ máy Provider:
+
+```powershell
+$owner = @{ Authorization = 'Bearer ' + [IO.File]::ReadAllText($keyPath).Trim() }
+Invoke-RestMethod -Method Post -Uri "$($c.REGISTRY_URL)/v1/agents/$($c.AGENT_ID)/heartbeat" -Headers $owner |
+    Select-Object status,last_heartbeat,lease_expires_at
+```
+
+Để duy trì qua nhiều lease, ứng dụng tự lên lịch heartbeat theo `heartbeat_interval_seconds`. Với 409, POST lại card đầy đủ kèm Bearer vào `/v1/agents`. Retry có backoff cho sự cố mạng/5xx. Với 401, kiểm tra khóa thuộc đúng ID; với 403 khi tạo ID, hỏi quản trị viên token hiện hành. Gửi POST unregister khi shutdown để giữ ownership. Consumer discovery rồi gọi endpoint trực tiếp. Chỉ gửi khóa cho Registry. Java, Go, JavaScript và Python đều dùng cùng [REST contract](api_contract.md).
+
 ## 4. Provider bằng Python SDK
 
 Với Python, cách khuyến nghị là dùng package `agent_registry_client`.
@@ -158,7 +204,7 @@ SDK chỉ hỗ trợ tích hợp Registry; Agent của nhóm vẫn tự chọn f
 
 ### Lifecycle tối thiểu
 
-Ví dụ Provider dùng FastAPI:
+Ví dụ Provider Echo dùng FastAPI sau khi nạp cấu hình Windows ở trên (khai báo capability `echo_text` trên card):
 
 ```python
 import os
@@ -169,13 +215,13 @@ from fastapi import FastAPI
 from agent_registry_client import registered_agent
 
 CARD = {
-    "agent_id": "text-team-a",
-    "name": "Text Agent",
-    "domain": "text",
-    "description": "Simple text processing provider",
-    "capabilities": ["echo_text"],
-    "endpoint": "http://127.0.0.1:8010/invoke",
-    "version": "1.0",
+    "agent_id": os.environ["AGENT_ID"],
+    "name": os.environ["AGENT_NAME"],
+    "domain": os.environ["AGENT_DOMAIN"],
+    "description": os.environ["AGENT_DESCRIPTION"],
+    "capabilities": os.environ["AGENT_CAPABILITIES"].split(","),
+    "endpoint": os.environ["AGENT_ENDPOINT"],
+    "version": os.environ["AGENT_VERSION"],
 }
 
 @asynccontextmanager
@@ -184,8 +230,9 @@ async def lifespan(app):
         async with registered_agent(
             CARD,
             os.getenv("REGISTRY_URL", "http://127.0.0.1:8000"),
-            "text-team-a.credential",
+            os.getenv("AGENT_CREDENTIAL_FILE", "text-team-a.credential"),
             http,
+            join_token=os.getenv("REGISTRY_JOIN_TOKEN"),
         ):
             yield
 

@@ -8,6 +8,7 @@ const source = html.split('<script>')[1].split('</script>')[0];
 
 class Element {
   constructor() { this.value = ''; this.textContent = ''; this.hidden = false; this.open = false; this.listeners = {}; this.children = []; }
+  click() { this.clicked = true; }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
   setAttribute(key, value) { this[key] = value; }
@@ -23,9 +24,11 @@ function fixture() {
   const nodes = new Map([...html.matchAll(/id="([^"]+)"/g)].map(m => [m[1], new Element()]));
   const requests = [], records = new Map(), timers = [];
   const secret = 'test-only-credential';
+  const blobs = [], revoked = [];
   const context = vm.createContext({
+    Blob, URL: {createObjectURL(blob) { blobs.push(blob); return 'blob:local'; }, revokeObjectURL(url) { revoked.push(url); }},
     document: {getElementById: id => { assert.ok(nodes.has(id), `Missing DOM ID ${id}`); return nodes.get(id); }, createElement: () => new Element()},
-    window: {addEventListener() {}}, navigator: {clipboard: {async writeText() {}}},
+    window: {location: {origin:'https://registry.test'}, addEventListener() {}}, navigator: {clipboard: {async writeText() {}}},
     URLSearchParams, AbortController, setTimeout, clearTimeout, setInterval(fn) { timers.push(fn); },
     fetch: async (url, options) => {
       requests.push({url, ...options});
@@ -37,6 +40,7 @@ function fixture() {
       const body = options.body ? JSON.parse(options.body) : null;
       if (url === '/v1/agents') {
         const existing = records.get(body.agent_id);
+        if (!existing && options.headers['X-Registry-Join-Token'] !== 'test-join') return reply(403, {});
         if (existing && options.headers.Authorization !== 'Bearer ' + secret) return reply(401, {});
         const result = {...body, registered_at:'2026-01-01T00:00:00Z', updated_at:'2026-01-01T00:00:00Z', last_heartbeat:'2026-01-01T00:00:00Z', lease_expires_at:'2026-01-01T00:00:30Z', status:'ONLINE'};
         records.set(body.agent_id, result);
@@ -50,10 +54,11 @@ function fixture() {
     }
   });
   vm.runInContext(source, context);
-  return {nodes, requests, records, context, secret, timers, run: expression => vm.runInContext(expression, context)};
+  return {nodes, requests, records, context, secret, timers, blobs, revoked, run: expression => vm.runInContext(expression, context)};
 }
 async function create(f, id = 'generic-1') {
   f.run("openEditor('create')");
+  f.nodes.get('join-token').value = 'test-join';
   const values = {agent_id:id, name:'Generic Agent', domain:'documents', version:'1', capabilities:'extract_text, summarize\nclassify', endpoint:'https://example.test/run', description:'<img src=x onerror=alert(1)>'};
   for (const [key,value] of Object.entries(values)) f.nodes.get('card-' + key).value = value;
   await f.nodes.get('card-form').listeners.submit({preventDefault() {}});
@@ -103,6 +108,7 @@ test('expired heartbeat reports recovery, re-registration preserves ownership', 
   await f.nodes.get('card-form').listeners.submit({preventDefault() {}});
   assert.equal(f.records.get('generic-1').status, 'ONLINE');
   const registration = f.requests.filter(r => r.url === '/v1/agents').at(-1);
+  assert.equal(registration.headers['X-Registry-Join-Token'], undefined);
   assert.equal(registration.headers.Authorization, 'Bearer ' + f.secret);
 });
 
@@ -112,6 +118,29 @@ test('switching Agent clears credentials and arbitrary card text remains plain t
   f.nodes.get('manager-close').onclick(); await f.run("openManager('generic-2')");
   assert.equal(f.nodes.get('manage-token').value, '');
   assert.equal(f.nodes.get('agent-detail').children[1].textContent, '<img src=x onerror=alert(1)>');
+});
+
+test('onboarding exports the key and public template separately on click only', async () => {
+  const f = fixture(); await create(f);
+  const posts = f.requests.filter(r => r.method === 'POST');
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].headers['X-Registry-Join-Token'], 'test-join');
+  assert.ok(!posts[0].body.includes('test-join') && !posts[0].url.includes('test-join'));
+  assert.equal(f.nodes.get('join-token').value, '');
+  assert.equal(f.blobs.length, 0);
+  f.nodes.get('download-config').onclick(); f.nodes.get('download-key').onclick();
+  const config = await f.blobs[0].text();
+  assert.deepEqual(JSON.parse(config), {REGISTRY_URL:'https://registry.test', AGENT_ID:'generic-1',
+    AGENT_ENDPOINT:'https://example.test/run', AGENT_DOMAIN:'documents',
+    AGENT_CAPABILITIES:['extract_text','summarize','classify'], AGENT_NAME:'Generic Agent',
+    AGENT_DESCRIPTION:'<img src=x onerror=alert(1)>', AGENT_VERSION:'1', AGENT_CREDENTIAL_FILE:'agent-generic-1.credential'});
+  assert.ok(!config.includes(f.secret) && !config.includes('test-join'));
+  assert.equal(await f.blobs[1].text(), f.secret);
+  assert.doesNotMatch(source, /localStorage|sessionStorage|document\.cookie|console\./);
+  f.nodes.get('secret').close(); f.nodes.get('download-key').onclick();
+  assert.equal(f.blobs.length, 2);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(f.revoked.length, 2);
 });
 
 test('dashboard has no heartbeat request or button', () => { assert.doesNotMatch(source, /\/heartbeat/); assert.doesNotMatch(html, /id="heartbeat-agent"/); });

@@ -142,7 +142,7 @@ Không có active probe. UNREACHABLE nghĩa Registry không còn tín hiệu đ�
 
 ## 8. Credential / Ownership
 
-Registry sinh secret ngẫu nhiên 32 byte, trả một lần, lưu SHA-256. Bearer credential của đúng ID cần cho re-registration, PATCH, heartbeat, unregister và DELETE. ID mới không cần credential; đây chưa phải admission control.
+Registry sinh secret ngẫu nhiên 32 byte, trả một lần, lưu SHA-256. Bearer credential của đúng ID cần cho re-registration, PATCH, heartbeat, unregister và DELETE. ID mới cần join token của Registry. Service kiểm tra admission trong cùng giao dịch ghi SQLite với việc tra ID; chỉ cấp ownership credential sau khi admission thành công.
 
 SDK đọc/lưu secret ở file riêng, tạo file mới bằng exclusive create. Quyền 0600 được yêu cầu khi tạo; trên Windows cần bảo vệ ACL thư mục. Không log secret, không dùng credential Registry để xác thực business API. Mất khóa hoặc mất response cấp khóa đầu tiên chưa có cơ chế phục hồi/rotation.
 

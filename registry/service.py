@@ -43,7 +43,15 @@ class RegistryService:
         return {**{key: getattr(agent, key) for key in fields},
                 'status': health_at(agent, now, self.settings.suspect_seconds)}
 
-    def register(self, card, token):
+    def check_admission(self, supplied):
+        expected = self.settings.join_token
+        if expected and expected.strip():
+            if not supplied or not secrets.compare_digest(digest(supplied), digest(expected)):
+                raise RegistryError(403, 'Valid registration join token required')
+        elif not self.settings.allow_open_registration:
+            raise RegistryError(503, 'New registrations are disabled')
+
+    def register(self, card, token, join_token=None):
         self.begin_write()
         agent = self.db.get(Agent, card.agent_id)
         credential = None
@@ -54,6 +62,7 @@ class RegistryService:
         now = self.clock()
         created = agent is None
         if created:
+            self.check_admission(join_token)
             credential = secrets.token_urlsafe(32)
             agent = Agent(credential_hash=digest(credential), registered_at=now)
             self.db.add(agent)

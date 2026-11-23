@@ -61,6 +61,8 @@ agent-registry/
 
 ## Chọn cách chạy và truy cập
 
+Mặc định Registry đóng việc tạo ID mới khi chưa cấu hình `REGISTRY_JOIN_TOKEN`. Để chạy demo riêng trên loopback, đặt `$env:REGISTRY_ALLOW_OPEN_REGISTRATION = '1'` trong terminal Registry trước khi khởi động. Nếu có token, server vẫn yêu cầu token. Với Weather/News AUTO cần tự tạo ID trên Registry được bảo vệ, cung cấp `REGISTRY_JOIN_TOKEN` trên máy Provider cho lần đăng ký đầu. Provider đã có khóa chỉ dùng credential của ID đó.
+
 **Clone repository không đồng nghĩa kết nối đến Registry trên VPS.** Có thể dùng cùng một codebase để chạy hai Registry độc lập, với database và danh sách Agent riêng.
 
 | Tình huống | Registry chạy ở đâu? | Cách truy cập |
@@ -129,11 +131,14 @@ ssh -i "$env:USERPROFILE\.ssh\agent_registry_vps" -N -L 18000:127.0.0.1:8000 reg
 - `127.0.0.1` luôn chỉ **máy đang thực hiện kết nối**. `18000` là cổng local của tunnel; `8000` là cổng ứng dụng trên VPS.
 - Tắt SSH tunnel thì **đường truy cập từ laptop bị đóng**, nhưng Registry do `systemd` quản lý vẫn chạy.
 - **Không** đưa `http://127.0.0.1:18000` vào cấu hình `REGISTRY_URL` của các máy khác, trừ khi mỗi máy có tunnel riêng đã được thiết lập và được phép sử dụng.
-- Hiện triển khai VPS chỉ lắng nghe loopback; **chưa được coi là endpoint công khai cho cả lớp**. Trước khi mở ra Internet cần HTTPS hoặc mạng riêng, kiểm soát quyền truy cập/đăng ký và firewall phù hợp. Không mở trần port `8000` hay Dashboard chưa có xác thực quản trị.
+- Khi dùng HTTPS công cộng, Caddy chuyển tiếp vào Uvicorn trên loopback. SSH tunnel vẫn là một đường truy cập riêng cho vận hành.
 
 Chi tiết lệnh khởi tạo và vận hành xem [Deployment & Operations](docs/deployment.md).
 
 ## Web Dashboard
+
+Mở [Registry HTTPS của nhóm](https://103-180-134-53.sslip.io/). Với phiên bản hỗ trợ admission, xin join token từ quản trị viên để tạo ID mới. Sau khi tạo, tải file credential riêng và cấu hình JSON cho Provider. Dùng SDK hoặc REST từ project riêng của nhóm bạn. Xem [onboarding Windows](docs/agent_integration.md#onboarding-provider-trên-windows) và [triển khai, backup, đổi token](docs/deployment.md#rollout-https-và-join-token).
+
 
 Web Dashboard là giao diện chính dành cho người quản lý và demo hệ thống.
 

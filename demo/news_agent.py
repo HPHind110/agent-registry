@@ -31,6 +31,7 @@ async def lifespan(app):
     async with httpx.AsyncClient(timeout=3, follow_redirects=False, trust_env=False) as http:
         async with registered_agent(card, os.getenv('REGISTRY_URL', 'http://127.0.0.1:8000'),
                                     os.getenv('NEWS_CREDENTIAL_FILE', 'news.credential'), http,
+                                    join_token=os.getenv('REGISTRY_JOIN_TOKEN'),
                                     retry_max=float(os.getenv('AGENT_RETRY_MAX_SECONDS', '10'))) as lifecycle:
             app.state.lifecycle = lifecycle
             yield

@@ -13,13 +13,14 @@ log = logging.getLogger('uvicorn.error')
 
 class RegistryClient:
     def __init__(self, card, registry_url, credential_file, http, *, sleep=asyncio.sleep,
-                 retry_max=10.0):
+                 retry_max=10.0, join_token=None):
         if retry_max <= 0:
             raise ValueError('retry_max must be positive')
         self.card, self.url = card, registry_url.rstrip('/')
         self.path, self.http = Path(credential_file), http
         self.sleep, self.retry_max = sleep, retry_max
         self.token = None
+        self.join_token = join_token
         self.registered = False
         self.state = 'starting'
         self.interval = 10
@@ -30,7 +31,11 @@ class RegistryClient:
 
     async def register(self):
         log.info('[agent %s] registering', self.card['agent_id'])
-        response = await self.http.post(self.url + '/v1/agents', json=self.card, headers=self.headers)
+        headers = self.headers
+        if not self.token and self.join_token:
+            headers['X-Registry-Join-Token'] = self.join_token
+        response = await self.http.post(self.url + '/v1/agents', json=self.card, headers=headers,
+                                        follow_redirects=False)
         response.raise_for_status()
         body = response.json()
         # Save the one-time credential before interpreting other response fields.

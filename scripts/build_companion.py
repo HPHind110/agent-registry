@@ -1,0 +1,22 @@
+"""Build the portable zipapp with stable bytes on Windows and Linux."""
+from hashlib import sha256
+from pathlib import Path
+from zipfile import ZipFile, ZipInfo
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def build(target):
+    source = (ROOT / "companion/cli.py").read_text(encoding="utf-8").encode("utf-8")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    entry = ZipInfo("__main__.py", date_time=(1980, 1, 1, 0, 0, 0))
+    entry.create_system = 3
+    entry.external_attr = 0o100644 << 16
+    with ZipFile(target, "w") as archive:
+        archive.writestr(entry, source)
+    return sha256(target.read_bytes()).hexdigest()
+
+
+if __name__ == "__main__":
+    target = ROOT / "downloads/registry-companion.pyz"
+    print(build(target), target.name)

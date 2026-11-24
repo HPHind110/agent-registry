@@ -1,98 +1,105 @@
-# Provider Onboarding — Registry Lifecycle Companion
+# Registry Lifecycle Companion — Hướng dẫn Provider (Windows/Linux)
 
-Hướng dẫn mặc định cho **nhóm đã có HTTP Agent**. Không phải sửa source Agent, clone Registry hay cài SDK vào project. Companion chạy cạnh Agent và tự quản lý re-registration, heartbeat, phát hiện health lỗi và phục hồi.
+Companion là một tiến trình nhỏ chạy trên máy Provider. Nó đọc hai file Dashboard cấp, kiểm tra sức khỏe Agent và duy trì lease. Agent có thể viết bằng Java, Go, Node.js, Python hoặc ngôn ngữ khác. Máy chạy Companion cần Python 3.11 trở lên. Không cần pip, SDK, quyền admin hoặc clone repo.
 
-**Liên kết:** [Dashboard HTTPS](https://103-180-134-53.sslip.io/) · [Tải Companion v1.0](https://github.com/HPHind110/agent-registry/releases/tag/companion-v1.0.0) · [README](../README.md)
+## 1. Chuẩn bị hai địa chỉ
 
-## 1. Chuẩn bị
+- **Health URL** dùng riêng trên máy Provider. Chọn URL mà Agent thực sự hỗ trợ, ví dụ `http://127.0.0.1:9000/health`. Companion gửi GET và coi HTTP 2xx là khỏe; nội dung JSON không được diễn giải. Endpoint này nên trả 503 khi Agent chưa sẵn sàng. Trang đăng nhập hoặc trang tĩnh luôn trả 200 không phản ánh sức khỏe nghiệp vụ.
+- **Endpoint trên Agent Card** là URL Consumer gọi cho nghiệp vụ. Với demo nhiều máy, dùng địa chỉ mà Consumer truy cập được. Nếu card chứa `127.0.0.1`, Consumer trên máy khác sẽ gọi chính máy của họ.
 
-Cần có:
+Bật Agent theo hướng dẫn của nhóm bạn. Mở health URL trên máy Provider. Để Companion làm chủ lifecycle, tắt chế độ tự heartbeat của SDK/sidecar khác cho cùng ID (với demo News có thể chọn MANUAL).
 
-- HTTP Agent đang chạy; ví dụ `http://127.0.0.1:8101/`.
-- **Health URL**: GET trả 2xx khi Agent khỏe, ví dụ `http://127.0.0.1:8101/health`. Không dùng trang tĩnh luôn trả 200 hay URL cần token. Nếu Agent không có health URL phù hợp, cần chọn cách kiểm tra liveness đáng tin cậy khác trước khi dùng Companion.
-- **Business endpoint**: URL Client thực sự gọi, ví dụ `/plans` hoặc `/tasks`. Endpoint này phải truy cập được **từ máy Client**, không chỉ từ máy Provider.
-- Python **3.11+** trên máy chạy Companion.
+## 2. Đăng ký Agent và chuẩn bị file cấu hình
 
-## 2. Đăng ký và giữ hai file
+1. Mở [Dashboard của nhóm](https://103-180-134-53.sslip.io/). Chọn **Đăng ký Agent**, nhập card và join token do quản trị viên cấp qua kênh riêng. Nếu ID đã tồn tại, dùng credential của chủ sở hữu. Không tạo lại ID chỉ để dùng Companion.
+2. Ở hộp thoại thành công, bấm **Tải credential** và **Tải cấu hình JSON**. Đặt hai file trong thư mục chỉ tài khoản chạy Provider đọc được, ngoài Git. Giữ đúng tên file. Đường dẫn tương đối trong `AGENT_CREDENTIAL_FILE` được tính từ **thư mục chứa JSON**; đường dẫn tuyệt đối cũng dùng được.
+3. Tải [registry-companion-kit.zip](https://github.com/HPHind110/agent-registry/releases/tag/companion-v1.0.0) rồi **giải nén toàn bộ** vào một thư mục cá nhân có quyền ghi, ngoài Git. Giữ nguyên bốn file trong cùng thư mục. Nếu dùng CLI trực tiếp, có thể tải [registry-companion.pyz](../downloads/registry-companion.pyz?raw=true). Trên GitHub có thể chọn **Download raw file**.
 
-1. Mở [Dashboard](https://103-180-134-53.sslip.io/) → **Đăng ký Agent**.
-2. Điền Agent ID, tên, domain, capabilities, business endpoint, version, mô tả. **ID mới** cần Join Token cấp riêng; ID đã tồn tại dùng ownership credential cũ để đăng ký lại.
-3. Sau khi tạo thành công, tải **cả hai**: `agent-<id>.json` và `agent-<id>.credential`. Credential được cấp khi tạo ID mới, không thể lấy lại qua discovery.
-4. Đặt JSON và credential **cạnh nhau**, ngoài thư mục Git, trong folder chỉ người vận hành đọc được (ví dụ `C:\Users\<user>\agent-config\`). Không đăng credential lên GitHub hoặc gửi nó cho Client.
-
-`AGENT_CREDENTIAL_FILE` trong JSON thường là tên file tương đối và được tính từ **thư mục chứa JSON**. Không phải đặt hai file vào source folder Agent.
-
-## 3. Tải và chạy launcher (khuyến nghị)
-
-Tải asset **`registry-companion-kit.zip`** từ [Release v1.0](https://github.com/HPHind110/agent-registry/releases/tag/companion-v1.0.0). Giải nén **toàn bộ** ZIP vào một thư mục có quyền ghi, ví dụ `agent-config\companion-kit\`. Giữ nguyên bốn file gốc:
-
-- `registry-companion-start.cmd` (Windows)
-- `registry-companion-start.sh` (Linux)
-- `registry_companion_launcher.py`
-- `registry-companion.pyz`
-
-**Windows:** bật Agent, nhấp đúp `registry-companion-start.cmd`. Tại `Dashboard JSON path`, nhấn Enter để chọn file hoặc dán đường dẫn JSON. Nhập health URL khi được hỏi. Launcher thực hiện `check`, lưu profile, tạo `start-<id>-<mã>.cmd` và chạy lifecycle ngay. **Giữ cửa sổ mở**.
-
-**Linux:** bật Agent, mở terminal trong thư mục giải nén, chạy `sh ./registry-companion-start.sh`. Launcher tạo profile và launcher `start-...sh` (cùng `.desktop` nếu phù hợp).
-
-**Lần sau:** bật API của Agent rồi mở `start-...cmd` (Windows) hoặc launcher riêng trên Linux. Không cần chọn lại JSON/health URL. Nếu cấu hình thay đổi hoặc cần thêm Agent, chạy **launcher chung** và chọn `N` (New setup). Mỗi Agent ID có profile và tiến trình Companion riêng.
-
-**Không chạy đồng thời Companion, SDK hay adapter khác cùng quản lý lifecycle cho một Agent ID.** Khi dừng bình thường, nhấn `Ctrl+C` để Companion cố gắng graceful unregister, giữ ownership.
-
-## 4. Kiểm tra kết quả
-
-Dấu hiệu thành công trong terminal:
-
-~~~text
-[INFO] Agent health: healthy
-[INFO] Ownership verified; registration ONLINE (heartbeat every 10s).
-[INFO] Heartbeat accepted.
-~~~
-
-Trên Dashboard, xem `status`, `last_heartbeat` và `lease_expires_at`. Chờ qua vài chu kỳ (mặc định heartbeat mỗi 10 giây), kiểm tra thời gian tiếp tục cập nhật.
-
-Kiểm thử khôi phục:
-
-1. Dừng **API Agent** nhưng giữ Companion chạy. Companion ngừng heartbeat ngay khi phát hiện probe lỗi; mặc định sau ba lần lỗi liên tiếp sẽ cố gắng gửi `POST /unregister`.
-2. Nếu thành công, Registry hiển thị `UNREGISTERED`; nếu Registry không truy cập được, lease sẽ tự hết và có thể chuyển thành `UNREACHABLE`.
-3. Bật lại API Agent. Companion sẽ re-register bằng credential cũ và tiếp tục heartbeat.
-
-Health check chỉ chứng minh Agent phản hồi **từ máy Provider**; không chứng minh business endpoint có thể được gọi từ máy khác.
-
-## 5. Dùng CLI trực tiếp (tùy chọn)
-
-Không cần launcher nếu muốn tự động hóa:
-
-~~~powershell
-cd "$HOME\agent-config"
-py -3 .\companion-kit\registry-companion.pyz check --config .\agent-my-agent.json --health-url http://127.0.0.1:9000/health
-py -3 .\companion-kit\registry-companion.pyz start --config .\agent-my-agent.json --health-url http://127.0.0.1:9000/health
-~~~
-
-`check` chỉ đọc file và gửi GET; **không xác minh ownership bằng thao tác ghi**. `start` mới re-register với Bearer credential để xác minh ownership và giữ lease.
-
-## 6. Ví dụ đã kiểm thử
-
-| Agent | Cấu hình Dashboard | Health URL local |
-|---|---|---|
-| [File Organizer](https://github.com/HPHind110/file-organizer-agent) | `agent-demo-file-organizer-01.json` | `http://127.0.0.1:8101/health` |
-| [Study Planner](https://github.com/HPHind110/study-planning-agent) | `agent-demo-study-planner-01.json` | `http://127.0.0.1:8102/health` |
-
-Đây chỉ là **ví dụ**; launcher không hard-code framework, Agent ID hoặc port.
-
-## 7. Lỗi thường gặp
-
-| Hiện tượng | Cần làm gì |
+| File | Nội dung |
 |---|---|
-| JSON/credential missing | Đối chiếu tên file, quyền đọc và `AGENT_CREDENTIAL_FILE` (tính từ folder JSON). |
-| `Registry card differs in ...` | So với Dashboard; nếu chủ động đổi endpoint, cập nhật card bằng credential, đồng bộ JSON rồi New setup. |
-| `401` / `404` | Credential không thuộc ID hoặc ID không tồn tại; không tạo ID mới tự động. |
-| Registry/network lỗi tạm thời | `start` tự retry/backoff; kiểm tra HTTPS và kết nối mạng. |
-| Health unavailable | Bật API, kiểm tra đúng URL GET 2xx và port. |
-| Cannot acquire lock | Dừng Companion trùng cùng ID, không xóa lock đang được dùng. |
-| Profile yêu cầu New setup | JSON bị đổi/chuyển; chọn lại file trong launcher chung. |
-| `ONLINE` nhưng Client gọi lỗi | Kiểm tra business endpoint **từ máy Client**, firewall, HTTP method và business auth. |
+| `agent-example.json` | Registry URL, Agent ID, name, domain, description, capabilities, endpoint, version và **đường dẫn** file credential |
+| `agent-example.credential` | Ownership credential do Registry cấp một lần |
+| `registry-companion.pyz` | Chương trình dùng chung cho mọi Provider |
 
-**Bảo mật:** Companion chỉ gửi ownership credential đến Registry HTTPS tin cậy, không gửi sang Agent health API, không lưu secret vào profile. Mỗi Agent ID nên có duy nhất một lifecycle owner. Launcher không tự mở port, tạo tunnel, kết nối Broker hay tự định nghĩa schema nghiệp vụ.
+Kiểm tra `REGISTRY_URL` trong JSON trỏ đúng Registry tin cậy trước khi chạy. Chỉ cấp cấu hình từ nguồn tin cậy vì nó xác định nơi gửi credential. Companion chấp nhận Registry HTTPS với xác minh chứng chỉ mặc định hoặc HTTP loopback để test local. Nó không theo redirect, không gửi join token và không đính kèm Bearer khi kiểm tra Agent.
 
-[REST API](api_contract.md) · [Tích hợp nâng cao](agent_integration.md)
+## 3. Chạy Companion
+
+### Lần đầu và những lần sau bằng launcher
+
+1. Bật ứng dụng Agent và chuẩn bị health URL của nó. Trên **Windows**, nhấp đúp `registry-companion-start.cmd` trong thư mục vừa giải nén. Trên **Linux**, mở terminal tại thư mục đó và chạy `sh ./registry-companion-start.sh`. Máy cần Python 3.11+.
+2. Ở dòng **Dashboard JSON path**, nhấn Enter để mở hộp chọn file hoặc dán đường dẫn JSON. Nếu máy thiếu giao diện đồ họa/Tk, nhập đường dẫn ngay trong terminal. Credential vẫn nằm ở vị trí mà JSON chỉ định.
+3. Nhập health URL của Agent trên máy này. Dùng URL HTTP(S) trả 2xx khi Agent khỏe và có thể lưu công khai, không kèm token, mật khẩu hay query string.
+4. Launcher chạy `check`. Khi kiểm tra thành công, nó lưu profile cạnh launcher, tạo file mở riêng cho ID và chạy `start` ngay trong cửa sổ hiện tại. Đợi dòng **registration ONLINE** để xác nhận ownership. Giữ cửa sổ mở để theo dõi heartbeat. Nhấn **Ctrl+C** để Companion thử graceful unregister.
+5. Lần sau, bật Agent rồi mở file **`start-<Agent-ID>-<mã>.cmd`** trên Windows. Trên Linux, nhấp đúp file **`.desktop`** tương ứng và chọn **Allow Launching** nếu desktop yêu cầu. Trên máy không có desktop, chạy `sh ./start-<Agent-ID>-<mã>.sh` với tên thực tế. Mỗi cửa sổ quản lý một Agent.
+
+**Thêm Agent hoặc đổi cấu hình.** Mở lại launcher chung, chọn **N** (New setup), chọn JSON và nhập health URL. Cùng Registry và Agent ID sẽ cập nhật profile cũ sau khi `check` thành công. Nếu JSON bị sửa hoặc chuyển chỗ, launcher riêng yêu cầu thiết lập lại. Hãy kiểm tra `REGISTRY_URL` trước khi xác nhận. Nếu di chuyển thư mục bộ công cụ trên Linux, chạy New setup để cập nhật đường dẫn trong file `.desktop`.
+
+**Các file được lưu.** `start-*.profile.json` chỉ chứa đường dẫn JSON, health URL và mã SHA-256 của JSON để phát hiện thay đổi. Credential tiếp tục được Companion đọc từ `AGENT_CREDENTIAL_FILE`. Muốn bỏ một profile, dừng Companion rồi xóa file profile và các launcher cùng tên. Bạn vẫn giữ được JSON và credential do Dashboard cấp.
+
+### Dùng CLI trực tiếp cho tự động hóa
+
+Ví dụ dưới đặt file `.pyz`, JSON và credential trong `$HOME/agent-config`.
+
+**Windows PowerShell**, thay tên JSON và URL health của bạn:
+
+```powershell
+cd "$HOME\agent-config"
+py -3 --version
+py -3 registry-companion.pyz check --config agent-example.json --health-url http://127.0.0.1:9000/health
+if ($LASTEXITCODE -eq 0) {
+    py -3 registry-companion.pyz start --config agent-example.json --health-url http://127.0.0.1:9000/health
+}
+```
+
+**Linux**:
+
+```bash
+cd "$HOME/agent-config"
+chmod 600 agent-example.credential
+python3 --version
+python3 registry-companion.pyz check --config agent-example.json --health-url http://127.0.0.1:9000/health &&
+python3 registry-companion.pyz start --config agent-example.json --health-url http://127.0.0.1:9000/health
+```
+
+`check` chỉ đọc file và gửi GET. Thành công cho biết credential đọc được, Agent trả 2xx và card trên Registry khớp cấu hình. Registry hiện chỉ xác minh **ownership** khi nhận lệnh ghi có Bearer. `start` xác minh điều này bằng re-registration và lấy interval/TTL từ response.
+
+Để chạy lâu dài, giữ terminal Companion mở. Xem Agent trên Dashboard: trạng thái **ONLINE**, `last_heartbeat` và `lease_expires_at` tiến lên qua nhiều chu kỳ. Đóng Dashboard rồi mở lại cũng thấy heartbeat mới.
+
+## 4. Thử dừng và phục hồi
+
+- **Dừng Agent, giữ Companion chạy.** Ngay khi thấy probe lỗi, Companion ngừng gửi heartbeat. Mặc định sau 3 lần probe lỗi liên tiếp, Companion thử graceful unregister. Khi Registry nhận được, card thành UNREGISTERED và ownership còn nguyên. Nếu Registry mất kết nối, lease sẽ tự hết và card có thể chuyển SUSPECT rồi UNREACHABLE.
+- **Bật lại Agent**, giữ cùng health URL và config. Companion thấy 2xx, đọc lại card, re-register có Bearer và tiếp tục heartbeat. Nếu Registry ngừng lâu hơn TTL, heartbeat có thể trả 409; Companion tự so khớp card rồi re-register.
+- **Dừng Companion bằng Ctrl+C** (Linux cũng hỗ trợ SIGTERM). Sau khi đã attach, Companion thử unregister với timeout ngắn. Kill cưỡng bức hoặc mất điện để Registry tự xử lý bằng TTL. Không cần DELETE.
+- **Đổi endpoint có chủ ý:** dừng Companion, mở card trên Dashboard → **Sửa card** bằng ownership credential → nhập endpoint mới → cập nhật đúng `AGENT_ENDPOINT` trong JSON → chạy lại `check` rồi `start`. Làm tương tự với các trường metadata khác. Nếu health URL cũng đổi, cập nhật tham số CLI.
+
+## 5. Các Agent ví dụ
+
+| Project | Config cho identity hiện có | Health URL theo cấu hình mặc định |
+|---|---|---|
+| [File Organization Agent](https://github.com/HPHind110/file-organizer-agent) | `agent-demo-file-organizer-01.json` | `http://127.0.0.1:8101/health` |
+| [Study Planning Agent](https://github.com/HPHind110/study-planning-agent) | `agent-demo-study-planner-01.json` | `http://127.0.0.1:8102/health` |
+
+Thay hai tham số trong cùng lệnh ở mục 3. Nếu vận hành cả hai Agent, mở hai terminal, mỗi Companion quản lý một ID. Không cần sửa repository của hai nhóm.
+
+## 6. Chẩn đoán
+
+| Hiện tượng | Cách xử lý |
+|---|---|
+| Không đọc được JSON/credential | Kiểm tra tên file sau khi tải (trình duyệt có thể thêm “(1)”), đường dẫn và quyền đọc. Giữ nguyên nội dung khóa. |
+| Card differs in … | Đối chiếu trường được báo trên Dashboard. Cập nhật JSON theo card hiện hành hoặc chủ động sửa card trước. |
+| Registry 401/403/404 | Kiểm tra Registry URL, ID và đúng ownership credential. Companion dừng. ID thiếu cần xử lý riêng qua Dashboard. |
+| Registry 408/429/5xx hoặc lỗi kết nối | `start` retry với exponential backoff có jitter, tối đa 30 giây mỗi lần đợi. Health và Registry có log riêng. |
+| Agent health unavailable | Kiểm tra process và health URL trên máy Provider. Health URL cần GET không yêu cầu auth và trả 2xx trực tiếp. |
+| Cannot acquire lock | Kiểm tra Companion khác chạy cùng Registry origin, Agent ID và tài khoản hệ điều hành. Khóa do OS giải phóng khi process thoát; không xóa file lock đang dùng. |
+| ONLINE nhưng Consumer gọi lỗi | Thử business endpoint từ máy Consumer. Kiểm tra DNS, firewall, mạng và xác thực nghiệp vụ. |
+
+`--timeout` mặc định 3 giây cho socket HTTP; `--poll-interval` mặc định 2 giây; `--failure-threshold` mặc định 3, tối thiểu 2. Companion cũng probe khi đến hạn heartbeat. Mã thoát 0 cho kiểm tra thành công hoặc dừng bình thường, 2 cho lỗi cấu hình/ownership/card/lock, 3 cho lỗi tạm thời khi chạy `check`. Một lần `check` không gia hạn lease.
+
+**Giới hạn:** Dùng duy nhất một chủ thể ghi lifecycle cho mỗi ID. Lock không phát hiện SDK, máy khác, tài khoản OS khác hoặc hostname alias. Registry v1 nhận cả card khi re-register và chưa có conditional write/instance fencing; tránh sửa card đồng thời trong khoảng từ GET đến POST. Companion đọc lại card trước mỗi re-registration và từ chối khi metadata khác. Health local phản ánh HTTP tại thời điểm probe, không chứng minh reachability từ xa. Companion không mở port, tạo tunnel, triển khai business auth, xử lý message broker hoặc định nghĩa giao thức invocation.
+
+## 7. Build dành cho người bảo trì
+
+Tại repo, chạy `python scripts/build_companion.py`. Script tạo `downloads/registry-companion.pyz` và `downloads/registry-companion-kit.zip` với timestamp và newline cố định. ZIP gồm bản CLI đó, hai launcher và `registry_companion_launcher.py`. Chạy `python -m pytest tests/test_companion.py tests/test_companion_launchers.py -q` để kiểm tra artifact và các luồng CLI/launcher. Trên Windows test gọi CMD, trên Linux test gọi `/bin/sh`. Có thể kiểm tra mã SHA-256 bằng `Get-FileHash` hoặc `sha256sum`.
+
+[README](../README.md) · [Release v1.0](https://github.com/HPHind110/agent-registry/releases/tag/companion-v1.0.0) · [Registry API](api_contract.md) · [Tích hợp SDK hoặc REST](agent_integration.md)

@@ -250,3 +250,9 @@ python -m scripts.generic_smoke_test
 ```
 
 Trước khi tích hợp liên nhóm, nên chạy toàn bộ bốn nhóm test trên rồi mới chuyển sang kiểm thử LAN/cross-team.
+
+## 8. Launcher của Companion
+
+Ngày 24/11/2026 trên Windows, `python -m pytest -q` qua 115 test (7 test launcher), kèm một cảnh báo deprecation từ Starlette TestClient. Bảy test Dashboard và hai script smoke ở mục 7 cũng qua.
+
+Các test launcher giải nén bộ ZIP, chạy file CMD với JSON trong đường dẫn có dấu cách, kiểm tra cấu hình đã đổi/mất, health lỗi, nhiều Agent, nội dung profile và lệnh unregister sau SIGINT. Kiểm tra SIGINT dùng tín hiệu trong tiến trình Python. Các bài thử dùng HTTP loopback và Registry tạm. Máy kiểm tra local không có Linux/WSL. Kết quả runner Linux, khi có, được ghi riêng trong Checks của PR.

@@ -13,7 +13,7 @@ Bật Agent theo hướng dẫn của nhóm bạn. Mở health URL trên máy Pr
 
 1. Mở [Dashboard của nhóm](https://103-180-134-53.sslip.io/). Chọn **Đăng ký Agent**, nhập card và join token do quản trị viên cấp qua kênh riêng. Nếu ID đã tồn tại, dùng credential của chủ sở hữu. Không tạo lại ID chỉ để dùng Companion.
 2. Ở hộp thoại thành công, bấm **Tải credential** và **Tải cấu hình JSON**. Đặt hai file trong thư mục chỉ tài khoản chạy Provider đọc được, ngoài Git. Giữ đúng tên file. Đường dẫn tương đối trong `AGENT_CREDENTIAL_FILE` được tính từ **thư mục chứa JSON**; đường dẫn tuyệt đối cũng dùng được.
-3. Tải [registry-companion.pyz](../downloads/registry-companion.pyz?raw=true) từ cùng phiên bản repo. Nếu GitHub mở trang file, chọn **Download raw file**. Tệp này có thể nằm ở thư mục khác. Ví dụ dưới đặt cả ba vào `$HOME/agent-config`.
+3. Tải [registry-companion-kit.zip](../downloads/registry-companion-kit.zip?raw=true) rồi **giải nén toàn bộ** vào một thư mục cá nhân có quyền ghi, ngoài Git. Giữ nguyên bốn file trong cùng thư mục. Nếu dùng CLI trực tiếp, chỉ cần tải [registry-companion.pyz](../downloads/registry-companion.pyz?raw=true). Trên GitHub có thể chọn **Download raw file**.
 
 | File | Nội dung |
 |---|---|
@@ -23,7 +23,23 @@ Bật Agent theo hướng dẫn của nhóm bạn. Mở health URL trên máy Pr
 
 Kiểm tra `REGISTRY_URL` trong JSON trỏ đúng Registry tin cậy trước khi chạy. Chỉ cấp cấu hình từ nguồn tin cậy vì nó xác định nơi gửi credential. Companion chấp nhận Registry HTTPS với xác minh chứng chỉ mặc định hoặc HTTP loopback để test local. Nó không theo redirect, không gửi join token và không đính kèm Bearer khi kiểm tra Agent.
 
-## 3. Kiểm tra rồi chạy
+## 3. Chạy Companion
+
+### Lần đầu và những lần sau bằng launcher
+
+1. Bật ứng dụng Agent và chuẩn bị health URL của nó. Trên **Windows**, nhấp đúp `registry-companion-start.cmd` trong thư mục vừa giải nén. Trên **Linux**, mở terminal tại thư mục đó và chạy `sh ./registry-companion-start.sh`. Máy cần Python 3.11+.
+2. Ở dòng **Dashboard JSON path**, nhấn Enter để mở hộp chọn file hoặc dán đường dẫn JSON. Nếu máy thiếu giao diện đồ họa/Tk, nhập đường dẫn ngay trong terminal. Credential vẫn nằm ở vị trí mà JSON chỉ định.
+3. Nhập health URL của Agent trên máy này. Dùng URL HTTP(S) trả 2xx khi Agent khỏe và có thể lưu công khai, không kèm token, mật khẩu hay query string.
+4. Launcher chạy `check`. Khi kiểm tra thành công, nó lưu profile cạnh launcher, tạo file mở riêng cho ID và chạy `start` ngay trong cửa sổ hiện tại. Đợi dòng **registration ONLINE** để xác nhận ownership. Giữ cửa sổ mở để theo dõi heartbeat. Nhấn **Ctrl+C** để Companion thử graceful unregister.
+5. Lần sau, bật Agent rồi mở file **`start-<Agent-ID>-<mã>.cmd`** trên Windows. Trên Linux, nhấp đúp file **`.desktop`** tương ứng và chọn **Allow Launching** nếu desktop yêu cầu. Trên máy không có desktop, chạy `sh ./start-<Agent-ID>-<mã>.sh` với tên thực tế. Mỗi cửa sổ quản lý một Agent.
+
+**Thêm Agent hoặc đổi cấu hình.** Mở lại launcher chung, chọn **N** (New setup), chọn JSON và nhập health URL. Cùng Registry và Agent ID sẽ cập nhật profile cũ sau khi `check` thành công. Nếu JSON bị sửa hoặc chuyển chỗ, launcher riêng yêu cầu thiết lập lại. Hãy kiểm tra `REGISTRY_URL` trước khi xác nhận. Nếu di chuyển thư mục bộ công cụ trên Linux, chạy New setup để cập nhật đường dẫn trong file `.desktop`.
+
+**Các file được lưu.** `start-*.profile.json` chỉ chứa đường dẫn JSON, health URL và mã SHA-256 của JSON để phát hiện thay đổi. Credential tiếp tục được Companion đọc từ `AGENT_CREDENTIAL_FILE`. Muốn bỏ một profile, dừng Companion rồi xóa file profile và các launcher cùng tên. Bạn vẫn giữ được JSON và credential do Dashboard cấp.
+
+### Dùng CLI trực tiếp cho tự động hóa
+
+Ví dụ dưới đặt file `.pyz`, JSON và credential trong `$HOME/agent-config`.
 
 **Windows PowerShell**, thay tên JSON và URL health của bạn:
 
@@ -84,6 +100,6 @@ Thay hai tham số trong cùng lệnh ở mục 3. Nếu vận hành cả hai Ag
 
 ## 7. Build dành cho người bảo trì
 
-Tại repo, chạy `python scripts/build_companion.py`, sau đó `python downloads/registry-companion.pyz --help`. Script chỉ đóng gói [source CLI](../companion/cli.py) thành `__main__.py`, chuẩn hóa newline và đặt timestamp/mode cố định. Không tải dependency. Test so sánh từng byte của bản build với artifact phát hành. Trên Windows dùng `Get-FileHash .\downloads\registry-companion.pyz -Algorithm SHA256`, trên Linux dùng `sha256sum downloads/registry-companion.pyz`.
+Tại repo, chạy `python scripts/build_companion.py`. Script tạo `downloads/registry-companion.pyz` và `downloads/registry-companion-kit.zip` với timestamp và newline cố định. ZIP gồm bản CLI đó, hai launcher và `registry_companion_launcher.py`. Chạy `python -m pytest tests/test_companion.py tests/test_companion_launchers.py -q` để kiểm tra artifact và các luồng CLI/launcher. Trên Windows test gọi CMD, trên Linux test gọi `/bin/sh`. Có thể kiểm tra mã SHA-256 bằng `Get-FileHash` hoặc `sha256sum`.
 
 [README](../README.md) · [Registry API](api_contract.md) · [Tích hợp SDK hoặc REST](agent_integration.md)

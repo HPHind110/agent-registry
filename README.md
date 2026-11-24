@@ -139,7 +139,9 @@ Chi tiết lệnh khởi tạo và vận hành xem [Deployment & Operations](doc
 
 ### Provider đã có ứng dụng HTTP
 
-Khởi chạy ứng dụng của bạn, đăng ký card trên Dashboard và tải hai file JSON/credential. Mở terminal thứ hai trên máy Provider, dùng Python 3.11+ chạy [registry-companion.pyz](downloads/registry-companion.pyz?raw=true). Companion kiểm tra health và duy trì heartbeat riêng; nhóm bạn không cần clone Registry hay cài SDK vào ứng dụng.
+Khởi chạy ứng dụng, đăng ký card trên Dashboard và tải JSON cùng credential. Giải nén [bộ Companion cho Windows và Linux](downloads/registry-companion-kit.zip?raw=true) trên máy Provider có Python 3.11+. Mở `registry-companion-start.cmd` (Windows) hoặc chạy `sh ./registry-companion-start.sh` (Linux), chọn JSON và nhập health URL. Những lần sau chỉ cần mở launcher riêng của Agent. [Hướng dẫn từng bước](docs/companion_onboarding.md).
+
+Nếu chạy bằng script, có thể dùng trực tiếp [registry-companion.pyz](downloads/registry-companion.pyz?raw=true).
 
 ```powershell
 python registry-companion.pyz check --config agent-example.json --health-url http://127.0.0.1:9000/health

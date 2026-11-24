@@ -407,18 +407,16 @@ Consumer discovery lần tiếp theo sẽ nhận binding mới, không cần s�
 
 ## 10. Chạy trên nhiều máy
 
-**Trước khi cấu hình URL, phân biệt ba tình huống:**
+**Khi chọn Registry URL, phân biệt hai môi trường:**
 
-| Mô hình | `REGISTRY_URL` ở máy gọi | Ý nghĩa |
+| Mô hình | `REGISTRY_URL` ở Provider / Consumer | Ý nghĩa |
 |---|---|---|
-| Registry và Agent/Client cùng máy | `http://127.0.0.1:8000` | Local Registry |
-| Registry trên VPS qua SSH tunnel được mở **trên chính máy Agent/Client** | `http://127.0.0.1:18000` (nếu forward cổng 18000) | Chỉ riêng máy đang có tunnel dùng được |
-| Registry chung qua mạng | URL HTTPS hoặc private-network URL được cấp | Chỉ áp dụng sau khi thiết lập phương án truy cập an toàn |
+| Registry local chạy cùng máy | `http://127.0.0.1:8000` | Instance thử nghiệm riêng, SQLite riêng |
+| Registry chung trên VPS | `https://103-180-134-53.sslip.io` | HTTPS dùng chung cho các nhóm đã được cấp quyền đăng ký |
 
-**Từ một laptop, tunnel chỉ tạo kết nối tới Registry trên VPS, không làm cho endpoint của Provider ở laptop khác tự truy cập được.** Các nhóm cần kiểm tra cả hai chiều: Agent/Client ↔ Registry và Client → Provider.
+Các nhóm phải kiểm tra **hai tuyến kết nối khác nhau**: (1) Provider/Consumer → Registry HTTPS để đăng ký và discovery, (2) Consumer → Provider business endpoint để thực hiện nghiệp vụ. Truy cập được Registry **không tự làm cho một API chỉ bind localhost có thể được gọi từ máy khác**.
 
-Hướng dẫn cụ thể cho VPS, systemd, tunnel, local CLI, cập nhật code: [Deployment & Operations](deployment.md).
-
+Hướng dẫn VPS, systemd, Caddy, local CLI và cập nhật code: [Deployment & Operations](deployment.md).
 
 Khi tất cả chạy trên cùng máy, `127.0.0.1` là đủ.
 

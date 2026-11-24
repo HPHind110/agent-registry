@@ -1,258 +1,53 @@
-# Verification
+# Kiểm thử và xác minh
 
-[README](../README.md) · [Architecture](architecture.md) · [Agent Integration](agent_integration.md)
+[README](../README.md) · [Companion](companion_onboarding.md) · [Deployment](deployment.md)
 
-File này mô tả **hệ thống đang được kiểm tra ở những mức nào** và cách chạy các bài test.
+Tách ba mức bằng chứng: **unit/integration tests**, **smoke tests loopback**, và **kiểm thử thực tế trên Registry HTTPS**. Một mức đạt không tự chứng minh mức còn lại.
 
-Nó không phải hướng dẫn sử dụng Registry. Nếu chỉ muốn chạy project, xem [README](../README.md).
+## 1. Chạy test từ root repository
 
-## 1. Có những loại test nào?
+Tạo Python 3.11+ environment và cài `requirements.txt`, sau đó:
 
-Project hiện có bốn mức kiểm tra chính.
-
-### API tests
-
-Kiểm tra Registry REST API:
-
-- register;
-- discovery;
-- lookup;
-- credential;
-- heartbeat;
-- lease;
-- update;
-- unregister;
-- persistence;
-- validation.
-
-Source chính:
-
-```text
-tests/test_registry.py
-```
-
-### Lifecycle tests
-
-Kiểm tra các tình huống theo thời gian và lỗi mạng:
-
-- heartbeat qua nhiều lease;
-- `ONLINE → SUSPECT → UNREACHABLE`;
-- recovery;
-- re-registration;
-- Registry tạm unavailable;
-- graceful shutdown.
-
-Source:
-
-```text
-tests/test_lifecycle.py
-```
-
-### Generic integration tests
-
-Kiểm tra Registry không phụ thuộc Weather:
-
-- nhiều domain/capability;
-- News Agent;
-- Weather backward compatibility;
-- Planner;
-- multiple providers;
-- failover;
-- response validation.
-
-Source:
-
-```text
-tests/test_generic.py
-```
-
-### Process smoke tests
-
-Các script này khởi động những process thật và giao tiếp qua HTTP loopback.
-
-```text
-scripts/smoke_test.py
-scripts/generic_smoke_test.py
-```
-
-Chúng gần với demo end-to-end hơn unit test.
-
-## 2. Chạy test
-
-Sau khi cài dependencies:
-
-```powershell
-python -m pytest -q
-```
-
-Dashboard controller tests cần Node.js:
-
-```powershell
+~~~powershell
+.\.venv\Scripts\python -m pytest -q
 node --test tests/dashboard.test.cjs
-```
+.\.venv\Scripts\python scripts/smoke_test.py
+.\.venv\Scripts\python -m scripts.generic_smoke_test
+~~~
 
-Legacy Weather/Travel smoke:
+Lệnh trên cho Windows; Linux dùng `.venv/bin/python`. Node.js **chỉ cần cho dashboard tests**, không cần để chạy Registry.
 
-```powershell
-python scripts/smoke_test.py
-```
-
-Generic Registry/Weather/News/Planner smoke:
-
-```powershell
-python -m scripts.generic_smoke_test
-```
-
-Node.js không cần để chạy Registry; chỉ cần cho dashboard test.
-
-## 3. Những scenario chính được kiểm tra
-
-| Scenario | Được kiểm tra ở |
+| Thành phần | Tests |
 |---|---|
-| Register và lookup Agent | API tests |
-| Duplicate ID và ownership | API tests |
-| Discovery theo domain/capability | API + generic tests |
-| Nhiều Provider cùng capability | API + generic tests |
-| Heartbeat renew lease | API + lifecycle tests |
-| SUSPECT / UNREACHABLE | lifecycle tests |
-| Re-register sau khi lease hết | lifecycle tests |
-| Endpoint thay đổi | lifecycle + smoke |
-| Registry restart giữ dữ liệu | API + smoke |
-| Registry tạm unavailable | lifecycle + smoke |
-| Weather business API vẫn chạy khi Registry lỗi | lifecycle + smoke |
-| Graceful unregister | lifecycle + smoke |
-| Weather GET cũ vẫn dùng được | generic + legacy smoke |
-| News search/summarize | generic tests |
-| Planner complete/partial | generic + generic smoke |
-| Provider failover | generic tests |
-| Browser không heartbeat thay Agent | dashboard tests |
-| Weather + News chạy như process riêng | generic smoke |
+| REST API, admission/ownership, lease | `tests/test_registry.py`, `tests/test_admission.py` |
+| SDK lifecycle, discovery, invocation | `tests/test_lifecycle.py`, `tests/test_generic.py`, `tests/test_rediscovery.py` |
+| Companion và launcher | `tests/test_companion.py`, `tests/test_companion_launchers.py` |
+| Dashboard | `tests/dashboard.test.cjs` |
+| Process HTTP loopback | `scripts/smoke_test.py`, `scripts/generic_smoke_test.py` |
 
-## 4. Generic smoke test đang chứng minh điều gì?
+Để build lại kit từ source: `python scripts/build_companion.py`. Chỉ phát hành artifact khi build/test và review thành công.
 
-Flow chính:
+## 2. Kết quả đã ghi nhận
 
-```text
-Start Registry
-   ↓
-Start Weather + News
-   ↓
-hai Provider tự register + heartbeat
-   ↓
-Planner discovery và gọi cả hai
-```
+Tại PR #5 (24/11/2026), Codex báo **115 Python tests pass**, **7 Dashboard tests pass**, hai smoke scripts pass trên Windows. GitHub Actions chạy **24/24 Companion/launcher tests** trên Ubuntu Python 3.11 và **24/24** trên Windows Python 3.11; cả hai jobs kết thúc `success`.
 
-Sau đó script tiếp tục kiểm tra:
+Kiểm thử thủ công thực tế trên laptop Windows với **File Organizer (8101)** và **Study Planner (8102)** đã xác nhận: `check`, authenticated re-register, heartbeat mỗi 10 giây, health failure → unregister, Agent restart → recovery, Companion `Ctrl+C` → giữ ownership và restart lại `ONLINE`. Launcher tạo profile riêng cho mỗi ID và chạy lifecycle.
 
-```text
-Weather crash
-   ↓
-Weather bị loại khỏi discovery
-   ↓
-News vẫn dùng được
-   ↓
-Planner trả partial
-```
+Những kết quả này **không** chứng minh Consumer ở một máy/mạng khác gọi được business endpoint, cũng không chứng minh Linux desktop double-click hoặc khả năng chịu tải production.
 
-và:
+## 3. Checklist trước khi demo liên nhóm
 
-```text
-Weather restart ở endpoint mới
-   ↓
-re-register
-   ↓
-Planner discovery binding mới
-```
+- [ ] Registry HTTPS `GET /v1/health` trả `status=ok`.
+- [ ] Provider đăng ký đúng card, giữ credential ngoài Git, dùng **một** Companion/SDK.
+- [ ] Health URL local trả 2xx khi khỏe; Companion gửi heartbeat và duy trì `ONLINE`.
+- [ ] Khi dừng Provider, Companion ngừng heartbeat; khi bật lại, re-register thành công.
+- [ ] Consumer discovery được đúng capability; **endpoint reachable từ máy Consumer**.
+- [ ] Consumer gọi đúng method/payload/auth và xác minh response.
+- [ ] Thử tình huống Provider lỗi, Registry tạm mất kết nối và restart.
+- [ ] Không đưa Join Token, credential hay secret vào log/ảnh/demo.
 
-Ngoài ra còn kiểm tra Registry outage và graceful shutdown.
+## 4. Chưa được đảm bảo
 
-## 5. Tại sao unit test dùng fake clock / MockTransport?
+Chưa có benchmark lớn, Registry replication, instance fencing liên máy, rate limiting theo nhóm, credential recovery, hoặc thử nghiệm end-to-end độc lập giữa tất cả nhóm infra. Kiểm thử của Companion không thay thế bài kiểm tra kết nối Broker hay giao thức invocation.
 
-Một số hành vi phụ thuộc thời gian.
-
-Nếu test thật sự phải chờ TTL 30 giây cho từng case thì test sẽ rất chậm.
-
-Vì vậy lifecycle tests dùng clock điều khiển được để mô phỏng:
-
-```text
-now
-↓
-advance 20s
-↓
-SUSPECT
-↓
-advance tiếp
-↓
-UNREACHABLE
-```
-
-`httpx.MockTransport` được dùng để giả lập:
-
-- mất kết nối;
-- HTTP 503;
-- JSON sai;
-- schema sai;
-- Provider đầu tiên fail.
-
-Smoke test vẫn dùng process và HTTP thật để bổ sung cho các test giả lập này.
-
-## 6. Những gì chưa được kiểm chứng đầy đủ
-
-### VPS service: kiểm tra thủ công, không phải cross-machine test
-
-Nhóm đã kiểm tra thủ công **một Agent Registry instance** trên VPS Ubuntu 24.04: process do `systemd` quản lý báo `active (running)`, `ss` hiển thị bind `127.0.0.1:8000`, SQLite file tồn tại và `/v1/health` trả `status: ok`. Sau khi restart, một request ngay lập tức đã gặp `Connection refused` nhưng request sau thành công; hiện chưa xác định được nguyên nhân chắc chắn, có thể do startup chưa sẵn sàng.
-
-Phạm vi **chưa** kiểm tra xong: reboot recovery thực tế, preservation của registration thật sau restart, SSH/HTTPS exposure và các máy khác dùng chung Registry VPS, Agent-to-Agent invocation giữa các mạng, cross-team integration. Xem [Deployment & Operations](deployment.md) để phân biệt CLI local với SSH tunnel.
-
-
-Hiện test chủ yếu chạy trong local/loopback.
-
-Chưa coi là đã kiểm chứng đầy đủ:
-
-- nhiều laptop trên LAN thực tế;
-- Agent của nhóm khác;
-- firewall/network policy thực tế;
-- Internet production;
-- browser E2E đầy đủ;
-- benchmark số lượng Agent lớn;
-- Registry replication/consensus;
-- instance fencing;
-- credential rotation/recovery.
-
-Nói cách khác:
-
-> Local tests chứng minh implementation hiện tại hoạt động trong phạm vi đã mô phỏng và smoke test, không chứng minh mọi tình huống mạng phân tán ngoài thực tế.
-
-## 7. Khi nào nên chạy bộ test nào?
-
-Khi sửa Registry backend:
-
-```powershell
-python -m pytest -q
-```
-
-Khi sửa Dashboard:
-
-```powershell
-node --test tests/dashboard.test.cjs
-```
-
-Trước khi demo Weather/Travel:
-
-```powershell
-python scripts/smoke_test.py
-```
-
-Trước khi demo generic integration:
-
-```powershell
-python -m scripts.generic_smoke_test
-```
-
-Trước khi tích hợp liên nhóm, nên chạy toàn bộ bốn nhóm test trên rồi mới chuyển sang kiểm thử LAN/cross-team.
-
-## 8. Launcher của Companion
-
-Ngày 24/11/2026 trên Windows, `python -m pytest -q` qua 115 test (7 test launcher), kèm một cảnh báo deprecation từ Starlette TestClient. Bảy test Dashboard và hai script smoke ở mục 7 cũng qua.
-
-Các test launcher giải nén bộ ZIP, chạy file CMD với JSON trong đường dẫn có dấu cách, kiểm tra cấu hình đã đổi/mất, health lỗi, nhiều Agent, nội dung profile và lệnh unregister sau SIGINT. Kiểm tra SIGINT dùng tín hiệu trong tiến trình Python. Các bài thử dùng HTTP loopback và Registry tạm. Máy kiểm tra local không có Linux/WSL. Kết quả runner Linux, khi có, được ghi riêng trong Checks của PR.
+[Architecture](architecture.md) · [API Contract](api_contract.md)

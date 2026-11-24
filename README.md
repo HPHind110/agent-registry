@@ -137,6 +137,19 @@ Chi tiết lệnh khởi tạo và vận hành xem [Deployment & Operations](doc
 
 ## Web Dashboard
 
+### Provider đã có ứng dụng HTTP
+
+Khởi chạy ứng dụng, đăng ký card trên Dashboard và tải JSON cùng credential. Giải nén [bộ Companion cho Windows và Linux](downloads/registry-companion-kit.zip?raw=true) trên máy Provider có Python 3.11+. Mở `registry-companion-start.cmd` (Windows) hoặc chạy `sh ./registry-companion-start.sh` (Linux), chọn JSON và nhập health URL. Những lần sau chỉ cần mở launcher riêng của Agent. [Hướng dẫn từng bước](docs/companion_onboarding.md).
+
+Nếu chạy bằng script, có thể dùng trực tiếp [registry-companion.pyz](downloads/registry-companion.pyz?raw=true).
+
+```powershell
+python registry-companion.pyz check --config agent-example.json --health-url http://127.0.0.1:9000/health
+python registry-companion.pyz start --config agent-example.json --health-url http://127.0.0.1:9000/health
+```
+
+Thay health URL bằng đường dẫn thực tế. [Hướng dẫn Windows/Linux, thử mất kết nối và đổi endpoint](docs/companion_onboarding.md).
+
 Mở [Registry HTTPS của nhóm](https://103-180-134-53.sslip.io/). Với phiên bản hỗ trợ admission, xin join token từ quản trị viên để tạo ID mới. Sau khi tạo, tải file credential riêng và cấu hình JSON cho Provider. Dùng SDK hoặc REST từ project riêng của nhóm bạn. Xem [onboarding Windows](docs/agent_integration.md#onboarding-provider-trên-windows) và [triển khai, backup, đổi token](docs/deployment.md#rollout-https-và-join-token).
 
 

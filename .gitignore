@@ -8,6 +8,11 @@ __pycache__/
 *.credential
 backups/
 *.zip
+!downloads/registry-companion-kit.zip
+downloads/start-*.profile.json
+downloads/start-*.cmd
+downloads/start-*.sh
+downloads/start-*.desktop
 *.log
 .env.*
 !.env.example

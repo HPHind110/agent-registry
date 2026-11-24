@@ -1,14 +1,33 @@
-# Registry REST API (v1)
+# Registry API
 
-**Base URL production:** `https://103-180-134-53.sslip.io` · [Swagger](https://103-180-134-53.sslip.io/docs)
+[README](../README.md) · [Architecture](architecture.md) · [Agent Integration](agent_integration.md)
 
-API lưu Agent Card, xác thực quyền sở hữu, theo dõi lease và trả kết quả discovery. Business requests **không đi qua Registry**.
+File này mô tả **REST API v1 công khai của Agent Registry**: đăng ký Agent, tìm kiếm, heartbeat, cập nhật và hủy đăng ký.
 
-[README](../README.md) · [Provider Onboarding](companion_onboarding.md)
+Nếu chỉ muốn chạy Registry và dùng Web Dashboard, xem [README](../README.md). Nếu muốn tích hợp một Agent mới, xem [Agent Integration](agent_integration.md).
 
-## 1. Agent Card
+## 1. Khái niệm chính
 
-~~~json
+| Khái niệm | Ý nghĩa |
+|---|---|
+| Agent Card | Thông tin mô tả một Provider Agent |
+| Agent ID | Định danh ổn định của Agent |
+| Domain | Lĩnh vực của Agent, ví dụ `weather`, `news` |
+| Capability | Chức năng cụ thể, ví dụ `weather_forecast` |
+| Endpoint | URL mà Client sẽ gọi sau khi discovery |
+| Credential | Khóa chứng minh quyền sở hữu Agent ID |
+| Heartbeat | Tín hiệu do Agent gửi để chứng minh registration còn hoạt động |
+| Lease | Khoảng thời gian Registry tiếp tục coi registration là hợp lệ |
+
+Base URL của Registry đang triển khai: `https://103-180-134-53.sslip.io` ([Swagger/OpenAPI](https://103-180-134-53.sslip.io/docs)). Khi chạy instance riêng để phát triển, base URL mặc định là `http://127.0.0.1:8000`.
+
+Bản REST API dùng được từ bất kỳ ngôn ngữ nào. Provider đã có HTTP API có thể dùng [Lifecycle Companion](companion_onboarding.md) để duy trì heartbeat mà không phải tự viết client REST.
+
+## 2. Agent Card
+
+Ví dụ:
+
+```json
 {
   "agent_id": "weather-team-a",
   "name": "Weather Agent",
@@ -18,92 +37,259 @@ API lưu Agent Card, xác thực quyền sở hữu, theo dõi lease và trả k
   "endpoint": "http://192.168.1.20:8001/forecast",
   "version": "1.0"
 }
-~~~
+```
 
-`agent_id` là định danh ổn định; `endpoint` là URL nghiệp vụ đầy đủ. `domain` và `capabilities` được chuẩn hóa về chữ thường; khoảng trắng/dấu gạch ngang thành `_`. `capabilities` là danh sách không rỗng. Endpoint là HTTP(S) URL, không chứa username/password hay fragment. Registry không chủ động gọi thử URL này.
+Các trường:
 
-## 2. Các endpoint
+| Field | Ý nghĩa |
+|---|---|
+| `agent_id` | ID duy nhất và ổn định của Agent |
+| `name` | Tên hiển thị |
+| `domain` | Lĩnh vực |
+| `description` | Mô tả ngắn |
+| `capabilities` | Danh sách chức năng dùng cho discovery |
+| `endpoint` | HTTP(S) URL đầy đủ để Client gọi |
+| `version` | Phiên bản service |
 
-| Method | Path | Mục đích / xác thực |
-|---|---|---|
-| `POST` | `/v1/agents` | Tạo mới: full card + header Join Token → `201` và credential một lần. Đăng ký lại: full card + Bearer → `200`. |
-| `GET` | `/v1/agents` | Discovery; bộ lọc `capability`, `domain`, `active_only`. |
-| `GET` | `/v1/agents/{agent_id}` | Lookup full card và runtime metadata, kể cả Agent offline. |
-| `GET` | `/v1/agents/{agent_id}/status` | `status`, `last_heartbeat`, `lease_expires_at`. |
-| `POST` | `/v1/agents/{agent_id}/heartbeat` | Bearer; gia hạn lease đang hợp lệ. |
-| `PATCH` | `/v1/agents/{agent_id}` | Bearer; cập nhật một phần card, **không** gia hạn lease. |
-| `POST` | `/v1/agents/{agent_id}/unregister` | Bearer; rút registration, **giữ ID và ownership**. |
-| `DELETE` | `/v1/agents/{agent_id}` | Bearer; xóa record **và ownership**. |
-| `GET` | `/v1/health` | Kiểm tra Registry và kết nối database. |
+Registry chuẩn hóa `domain` và `capability` về chữ thường; khoảng trắng và dấu `-` được chuyển thành `_`.
 
-### Tạo ID mới
+Ví dụ:
 
-~~~http
+```text
+Weather-Forecast
+→ weather_forecast
+```
+
+Registry **không kiểm tra endpoint có thực sự truy cập được hay không** khi đăng ký.
+
+## 3. Register và re-register
+
+### Tạo Agent ID mới
+
+Xin join token qua kênh riêng của nhóm vận hành. Gửi qua HTTPS trong header dưới đây, không đưa vào URL hoặc Agent Card. Server so sánh token trước khi tạo record. Thiếu hoặc sai trả 403. Khi quản trị viên chưa cấu hình token, tạo ID mới trả 503; các ID đã tồn tại vẫn dùng credential như trước. Chế độ local mở cần bật rõ ràng.
+
+```http
 POST /v1/agents
 X-Registry-Join-Token: <join-token>
 Content-Type: application/json
-~~~
+```
 
-Body là Agent Card đầy đủ. Token được quản trị viên cấp riêng; thiếu/sai trả `403`. Production không có token cấu hình thì từ chối tạo ID mới (`503`). Khi tạo thành công, response chứa `credential` **chỉ một lần**; giữ file này ngoài Git.
+Body là Agent Card đầy đủ.
 
-### Re-register / heartbeat
+Nếu ID chưa tồn tại:
 
-~~~http
+- trả HTTP `201`;
+- tạo registration;
+- Agent trở thành `ONLINE`;
+- Registry trả một `credential` mới.
+
+Credential chỉ được trả khi tạo mới và cần được lưu lại.
+
+### Re-register Agent đã có
+
+Gửi lại cùng endpoint:
+
+```http
 POST /v1/agents
-Authorization: Bearer <ownership-credential>
-Content-Type: application/json
-~~~
+Authorization: Bearer <credential>
+```
 
-Gửi full card. Re-register giữ `agent_id` và ownership, cập nhật binding và tạo lease mới, kể cả sau khi hết hạn/unregister. Join Token **không thay thế credential** của ID đã tồn tại.
+với Agent Card đầy đủ.
 
-~~~http
-POST /v1/agents/{agent_id}/heartbeat
-Authorization: Bearer <ownership-credential>
-~~~
+Re-registration:
 
-Heartbeat trả `409` khi lease đã hết hoặc Agent đã unregister; phải authenticated re-register trước khi heartbeat tiếp. GET và PATCH **không** renew lease.
+- giữ nguyên Agent ID và ownership;
+- cập nhật Agent Card, kể cả endpoint;
+- tạo lease mới;
+- đưa Agent trở lại `ONLINE`.
 
-### Discovery / lookup
+Nếu ID đã tồn tại nhưng credential thiếu hoặc sai, Registry trả `401`. Join token không cấp quyền sửa ID đã tồn tại. Sau DELETE, tạo lại ID cần qua admission như ID mới.
 
-~~~http
-GET /v1/agents?capability=weather_forecast&domain=weather
+## 4. Discovery
+
+Tìm tất cả Agent đang hoạt động:
+
+```http
+GET /v1/agents
+```
+
+Tìm theo capability:
+
+```http
+GET /v1/agents?capability=weather_forecast
+```
+
+Tìm theo domain và capability:
+
+```http
+GET /v1/agents?domain=weather&capability=weather_forecast
+```
+
+Mặc định chỉ các Agent `ONLINE` được trả về.
+
+Để xem cả các trạng thái khác:
+
+```http
 GET /v1/agents?active_only=false
-GET /v1/agents/weather-team-a/status
-~~~
+```
 
-`GET /v1/agents` mặc định chỉ trả Agent `ONLINE`, danh sách rỗng là `[]`. `active_only=false` gồm cả registration ở các trạng thái khác. Nhiều Provider có thể cùng capability. `GET /v1/agents/{id}` có thể trả Agent không ONLINE.
+Nếu không có Agent phù hợp:
 
-## 3. Lease và trạng thái
+```json
+[]
+```
 
-Mặc định heartbeat mỗi **10 giây**, ngưỡng nghi ngờ **20 giây**, TTL **30 giây** (có thể đổi bằng cấu hình server).
+Một capability có thể có **nhiều Provider Agent**. Registry trả danh sách; Client quyết định dùng provider nào.
 
-| Trạng thái | Ý nghĩa |
+## 5. Lookup và status
+
+Lấy đầy đủ thông tin một Agent:
+
+```http
+GET /v1/agents/{agent_id}
+```
+
+Lấy trạng thái lifecycle:
+
+```http
+GET /v1/agents/{agent_id}/status
+```
+
+Ví dụ:
+
+```json
+{
+  "agent_id": "weather-team-a",
+  "status": "ONLINE",
+  "last_heartbeat": "2026-11-16T09:00:00Z",
+  "lease_expires_at": "2026-11-16T09:00:30Z"
+}
+```
+
+Các trạng thái hiện tại:
+
+- `ONLINE`
+- `SUSPECT`
+- `UNREACHABLE`
+- `UNREGISTERED`
+
+Ý nghĩa và state machine chi tiết nằm trong [Architecture](architecture.md).
+
+## 6. Heartbeat
+
+Provider Agent tự gửi:
+
+```http
+POST /v1/agents/{agent_id}/heartbeat
+Authorization: Bearer <credential>
+```
+
+Heartbeat hợp lệ:
+
+- cập nhật `last_heartbeat`;
+- gia hạn lease;
+- có thể đưa Agent từ `SUSPECT` về `ONLINE`.
+
+Nếu lease đã hết hoặc Agent đã unregister, heartbeat trả `409`. Khi đó Agent cần **re-register**, không chỉ heartbeat tiếp.
+
+Web Dashboard không heartbeat thay Agent.
+
+## 7. Cập nhật Agent Card
+
+```http
+PATCH /v1/agents/{agent_id}
+Authorization: Bearer <credential>
+Content-Type: application/json
+```
+
+Ví dụ đổi endpoint:
+
+```json
+{
+  "endpoint": "http://192.168.1.20:9005/forecast"
+}
+```
+
+PATCH chỉ sửa metadata và **không gia hạn lease**.
+
+Muốn cập nhật card đồng thời tạo lease mới, dùng authenticated re-registration qua `POST /v1/agents`.
+
+## 8. Unregister và DELETE
+
+Hai thao tác này khác nhau.
+
+### Graceful unregister
+
+```http
+POST /v1/agents/{agent_id}/unregister
+Authorization: Bearer <credential>
+```
+
+Kết quả:
+
+- Agent chuyển sang `UNREGISTERED`;
+- record và ownership vẫn được giữ;
+- Agent có thể re-register lại bằng credential cũ.
+
+### Xóa hoàn toàn registration
+
+```http
+DELETE /v1/agents/{agent_id}
+Authorization: Bearer <credential>
+```
+
+Kết quả:
+
+- record bị xóa;
+- ownership bị xóa;
+- Agent ID có thể được đăng ký lại như một ID mới.
+
+Dashboard hiện dùng DELETE cho thao tác **Hủy đăng ký**.
+
+## 9. Registry health
+
+```http
+GET /v1/health
+```
+
+Endpoint này kiểm tra Registry và kết nối database.
+
+Nó **không phải health check của Provider Agent**.
+
+## 10. Authentication
+
+Các thao tác làm thay đổi một Agent đã tồn tại cần:
+
+```http
+Authorization: Bearer <credential>
+```
+
+Credential dùng để bảo vệ ownership của Agent ID.
+
+Credential:
+
+- không xuất hiện trong normal GET/discovery;
+- không nên đặt trong URL;
+- không phải credential để gọi business API của Provider Agent.
+
+## 11. HTTP errors thường gặp
+
+| HTTP | Ý nghĩa |
 |---|---|
-| `ONLINE` | Lease còn hạn và heartbeat đủ mới. |
-| `SUSPECT` | Heartbeat trễ nhưng chưa hết lease. |
-| `UNREACHABLE` | Lease hết hạn; không khẳng định process đã chết. |
-| `UNREGISTERED` | Provider chủ động rút đăng ký; ownership vẫn giữ. |
+| `401` | Credential thiếu hoặc sai |
+| `403` | Tạo ID mới thiếu join token hợp lệ |
+| `404` | Agent ID không tồn tại |
+| `409` | Heartbeat không còn hợp lệ; cần re-register |
+| `422` | Dữ liệu request/query không hợp lệ |
+| `503` | Registry/database tạm thời không sẵn sàng hoặc server đang khóa tạo ID mới |
 
-Response khi đăng ký có `heartbeat_interval_seconds` và `ttl_seconds`; nên dùng giá trị server trả, không hard-code. Xem [Architecture](architecture.md).
+Client nên xử lý theo HTTP status code, không phụ thuộc vào nội dung câu tiếng Anh trong error message.
 
-## 4. Authentication và lỗi
+## 12. Những quy tắc cần nhớ
 
-- **Join Token**: chỉ để được phép tạo ID mới, truyền qua `X-Registry-Join-Token` trên HTTPS.
-- **Ownership credential**: Bearer chỉ để thao tác lên **ID của chính Provider**; không nằm trong discovery.
-- **Business authentication**: do Provider tự quy định; không dùng hai khóa Registry ở trên.
-
-| HTTP | Cách hiểu |
-|---|---|
-| `401` | Thiếu/sai ownership credential. |
-| `403` | Join Token thiếu/sai khi tạo ID mới. |
-| `404` | Agent ID không tồn tại. |
-| `409` | Heartbeat hết hiệu lực, cần re-register. |
-| `422` | Card/query không hợp lệ. |
-| `408`, `429`, `5xx` | Lỗi có thể tạm thời; client cần retry có kiểm soát. |
-| `503` | DB không sẵn sàng hoặc tạo ID mới đang bị khóa. |
-
-Không gửi secret trong URL, log hay ảnh chụp. Dashboard thao tác **Hủy đăng ký** hiện dùng DELETE (khác graceful unregister).
-
-**Quan trọng:** Registry health không phải health của Provider; registration thành công không đảm bảo HTTP business endpoint reachable.
-
-[Invocation Contract](invocation_contract.md) · [Tích hợp nâng cao](agent_integration.md)
+- GET và refresh Dashboard **không renew lease**.
+- PATCH **không renew lease**.
+- Normal discovery mặc định chỉ trả `ONLINE`.
+- Registration thành công **không chứng minh business endpoint đang reachable**.
+- Registry chỉ trả endpoint; business request được Client gửi trực tiếp tới Provider.
+- Provider invocation contract là vấn đề riêng, xem [Invocation Contract](invocation_contract.md).
